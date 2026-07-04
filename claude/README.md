@@ -19,7 +19,7 @@ guardrails.
 ## Install
 
 ```bash
-git clone git@github.com:Zertyn-Enterprises/research.git
+git clone https://github.com/Zertyn-Enterprises/research.git
 bash research/claude/install.sh
 ```
 
