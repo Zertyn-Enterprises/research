@@ -1,0 +1,39 @@
+{
+  "env": {
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+    "CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS": "1",
+    "BASH_MAX_OUTPUT_LENGTH": "30000"
+  },
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf /)",
+      "Read(~/.ssh/**)"
+    ],
+    "ask": [
+      "Bash(git push origin main)",
+      "Bash(git push origin main *)",
+      "Bash(git push origin master)",
+      "Bash(git push origin master *)",
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git push --force-with-lease*)",
+      "Bash(git reset --hard*)",
+      "Bash(vercel deploy*)",
+      "Bash(vercel --prod*)",
+      "Bash(flyctl deploy*)",
+      "Bash(fly deploy*)",
+      "Bash(netlify deploy*)",
+      "Bash(eas submit*)",
+      "Bash(eas build*)",
+      "Bash(npm publish*)",
+      "Bash(pnpm publish*)",
+      "Bash(yarn publish*)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Write(.env)",
+      "Write(.env.*)"
+    ],
+    "defaultMode": "auto"
+  },
+  "effortLevel": "high"
+}
