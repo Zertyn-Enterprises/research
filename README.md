@@ -15,3 +15,7 @@ discipline.
 ## Domains
 
 AI · LLMs · local AI / inference · finetuning · robotics · embedded robotics
+
+## License
+
+MIT — see [LICENSE](./LICENSE). Copy, adapt, and reuse freely.
