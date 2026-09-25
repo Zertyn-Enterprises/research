@@ -332,6 +332,7 @@ do_safety() {
 do_claude_quality() {
   if [ "$HAS_CLAUDE" != "1" ]; then
     kit_warn "Claude Code not found — level claude-quality skipped"
+    LEVEL_SKIPPED=1
     return 0
   fi
   kit_need_jq
@@ -373,30 +374,36 @@ do_plan() {
 
 kit_say "=== install"
 INSTALLED=""
+SKIPPED=""
+LEVEL_SKIPPED=0
 for lv in $SELECTED; do
   kit_say ""
   kit_say "--- level $lv"
   if ! ask_level "$lv"; then continue; fi
+  LEVEL_SKIPPED=0
   case "$lv" in
     rules)          do_rules ;;
     safety)         do_safety ;;
     claude-quality) do_claude_quality ;;
     plan)           do_plan ;;
   esac
-  INSTALLED="$INSTALLED $lv"
+  if [ "$LEVEL_SKIPPED" = "1" ]; then SKIPPED="$SKIPPED $lv"; else INSTALLED="$INSTALLED $lv"; fi
 done
 
 kit_say ""
 kit_say "=== done"
 if [ -z "$INSTALLED" ]; then
-  kit_say "nothing selected — no change"
+  if [ -n "$SKIPPED" ]; then kit_say "nothing installed — skipped:$SKIPPED (its CLI was not found)"
+  else kit_say "nothing selected — no change"; fi
   exit 0
 fi
 if [ "$KIT_DRY_RUN" = "1" ]; then
   kit_say "dry run: levels$INSTALLED were planned, nothing was written"
+  [ -n "$SKIPPED" ] && kit_say "skipped:$SKIPPED (its CLI was not found)"
   exit 0
 fi
 kit_say "installed levels:$INSTALLED"
+[ -n "$SKIPPED" ] && kit_say "skipped:$SKIPPED (its CLI was not found)"
 kit_info "manifest: $KIT_MANIFEST"
 kit_info "restart your CLI sessions so the rules, hooks and permissions load"
 kit_info "verify:   bash $KIT_ROOT/doctor.sh"

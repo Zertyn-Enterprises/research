@@ -163,6 +163,21 @@ DELETE FROM audit WHERE 1=1;
 EOF')"
 t_assert_eq "blocks: psql -c with DROP TABLE (quoted, no heredoc)" 2 "$(run_hook "psql -c 'DROP TABLE users'")"
 t_assert_eq "blocks: mysql -e with DELETE FROM WHERE 1" 2 "$(run_hook 'mysql -e "DELETE FROM users WHERE 1=1"')"
+t_assert_eq "blocks: sqlite3 with DROP TABLE" 2 "$(run_hook 'sqlite3 app.db "DROP TABLE sessions"')"
+t_assert_eq "blocks: sudo psql with DROP DATABASE" 2 "$(run_hook "sudo psql -c 'drop database staging'")"
+t_assert_eq "allows: grep for 'drop table' in a schema file" 0 "$(run_hook "grep -i 'drop table' schema.sql")"
+t_assert_eq "allows: git log -S 'drop table'" 0 "$(run_hook "git log -S 'drop table' --oneline")"
+t_assert_eq "allows: echo mentioning DROP TABLE" 0 "$(run_hook 'echo "never run DROP TABLE in prod"')"
+t_assert_eq "allows: rg for DELETE FROM WHERE 1" 0 "$(run_hook 'rg "DELETE FROM .* WHERE 1" src/')"
+
+echo "-- a quoted << is text, not a heredoc opener --"
+t_assert_eq "blocks: rm -rf / on the line after a quoted <<" 2 "$(run_hook 'echo "cfg << eol"
+rm -rf /')"
+t_assert_eq "blocks: protected push on the line after a quoted <<" 2 "$(run_hook "echo 'a << b'
+git push origin main")"
+t_assert_eq "allows: a real heredoc still hides its body" 0 "$(run_hook 'cat <<EOF > notes.txt
+rm -rf /
+EOF')"
 
 echo "-- heredoc bodies are data, not commands --"
 t_assert_eq "allows: heredoc containing 'shutdown'" 0 "$(run_hook 'cat <<EOF > notes.txt

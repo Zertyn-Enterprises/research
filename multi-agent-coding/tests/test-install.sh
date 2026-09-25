@@ -288,6 +288,8 @@ t_assert "it writes the Grok rules file when Claude is absent" test -f "$HOME/.g
 rc="$(run_log "$LOGS/grok-q.log" bash "$PKG/install.sh" --yes --only claude-quality)"
 t_assert_eq "claude-quality without Claude exits 0" "0" "$rc"
 t_assert_grep "claude-quality says it was skipped" "Claude Code not found" "$LOGS/grok-q.log"
+t_assert_grep "the summary lists it as skipped" "skipped: claude-quality" "$LOGS/grok-q.log"
+t_assert_not_grep "the summary does not claim it was installed" "installed levels:.*claude-quality" "$LOGS/grok-q.log"
 t_assert_eq "it wrote no statusline script" "1" "$(rc_of test -e "$HOME/.claude/statusline-command.sh")"
 
 # ---------------------------------------------------------------- link mode and backups
@@ -432,6 +434,33 @@ t_assert_eq "the root key is prepended" "project_doc_max_bytes = 131072" "$(head
 t_assert_grep "the [tui] table keeps its own key untouched" "^project_doc_max_bytes = 4096$" "$HOME/.codex/config.toml"
 t_assert_grep "the [tui] table is intact" '^theme = "dark"$' "$HOME/.codex/config.toml"
 t_assert_eq "exactly one root-table key" "1" "$(awk '/^[[:space:]]*\[/ { exit } /^project_doc_max_bytes/ { n++ } END { print n+0 }' "$HOME/.codex/config.toml")"
+
+# ---------------------------------------------------------------- the SHIPPED package, not the fixture
+
+new_home real-pkg .claude .codex .grok
+rc="$(run_log "$LOGS/real.log" env MAC_SKIP_PATH_DETECT=1 bash "$KIT/install.sh" --yes --only rules,safety,claude-quality,plan)"
+t_assert_eq "the shipped package installs all four levels (exit 0)" "0" "$rc"
+S="$HOME/.claude/settings.json"
+t_assert "shipped settings.json is valid JSON" jq -e . "$S"
+t_assert_eq "the shipped deny list landed in full" "$(jq '.deny | length' "$KIT/config/permissions.json")" "$(jq '.permissions.deny | length' "$S")"
+t_assert_eq "the shipped ask list landed in full" "$(jq '.ask | length' "$KIT/config/permissions.json")" "$(jq '.permissions.ask | length' "$S")"
+t_assert_eq "the shipped hook entry is wired" "1" \
+  "$(jq '[.hooks.PreToolUse[].hooks[].command] | map(select(contains("block-dangerous"))) | length' "$S")"
+t_assert_not_grep "no @PREFIX@ placeholder survived in settings.json" "@PREFIX@" "$S"
+t_assert "the shipped Codex hooks.json is valid JSON" jq -e . "$HOME/.codex/hooks.json"
+t_assert "the shipped Grok hook file is valid JSON" jq -e . "$HOME/.grok/hooks/multi-agent-coding.json"
+t_assert_not_grep "no @PREFIX@ placeholder in the Grok hook file" "@PREFIX@" "$HOME/.grok/hooks/multi-agent-coding.json"
+hook_cmd="$(jq -r '.hooks.PreToolUse[].hooks[].command' "$S" | head -1)"
+t_assert_eq "the installed shipped hook blocks the root wipe" "2" \
+  "$(printf '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' | sh -c "$hook_cmd" >/dev/null 2>&1; echo $?)"
+t_assert_eq "the installed shipped hook allows a benign command" "0" \
+  "$(printf '{"tool_name":"Bash","tool_input":{"command":"npm test"}}' | sh -c "$hook_cmd" >/dev/null 2>&1; echo $?)"
+t_assert_grep "the shipped rules file landed" "managed-by: multi-agent-coding" "$HOME/.claude/rules/core.md"
+t_assert_grep "the shipped rules reached Codex too" "managed-by: multi-agent-coding" "$HOME/.codex/AGENTS.md"
+rc="$(run_log "$LOGS/real-uninst.log" bash "$KIT/uninstall.sh" --yes)"
+t_assert_eq "the shipped package uninstalls (exit 0)" "0" "$rc"
+t_assert_eq "uninstall left no shipped hook entry" "0" \
+  "$(jq '[.hooks.PreToolUse // [] | .[].hooks[].command] | map(select(contains("block-dangerous"))) | length' "$S")"
 
 # ---------------------------------------------------------------- --uninstall takes no selection
 

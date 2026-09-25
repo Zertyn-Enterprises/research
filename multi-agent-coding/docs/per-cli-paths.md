@@ -59,7 +59,9 @@ notifications would use instead of a macOS menu-bar widget.
 `~/.codex/AGENTS.override.md` if present
 ([AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md)). There is
 no imports mechanism to split it, so level 1 copies the whole rules file there rather
-than linking a directory.
+than linking a directory. The `learn.chatgpt.com/docs/…` pages cited here are where
+`developers.openai.com/codex/…` redirects (HTTP 308, checked 2026-09-26); both
+hostnames are OpenAI's.
 
 **The 32 KiB cap matters.** `project_doc_max_bytes` defaults to 32 KiB (same page),
 and the rules file is large enough that the default would truncate it — silently,

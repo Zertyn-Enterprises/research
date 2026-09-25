@@ -166,9 +166,10 @@ from a stranger without reading.
   do not use `--link` against a checkout you will later `git pull` without reading
   the diff.
 - **Always dry-run.** `install.sh --dry-run` prints every path it would touch.
-- **Nothing is written outside `$HOME`.** Every file that already existed and was
-  not installed by this kit is copied to `<file>.bak-<YYYYmmdd-HHMMSS>` before it is
-  replaced, and the path is printed.
+- **Nothing is installed outside `$HOME`.** Scratch files go to `$TMPDIR` while a
+  run lasts and are removed. Every file that already existed and was not installed
+  by this kit is copied to `<file>.bak-<YYYYmmdd-HHMMSS>` before it is replaced,
+  and the path is printed.
 - **`~/.claude/settings.json` is merged, never overwritten.** The installer unions
   the `deny` and `ask` permission lists and adds hook entries keyed by their command
   string. It does not touch `defaultMode` or any other key. It never sets a

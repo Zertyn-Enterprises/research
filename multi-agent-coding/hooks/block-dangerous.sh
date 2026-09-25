@@ -70,15 +70,38 @@ rm_root_delete() { # <text> → 0 when an rm with recursive+force flags targets 
     && printf '%s' "$m" | grep -qE '(^|[[:space:]])(-[[:alnum:]]*[fF][[:alnum:]]*|--force)([[:space:]]|$)'
 }
 
+seg_head_strip() { # <segment> → the segment with `(`/`{` openers, wrappers and VAR=value prefixes removed
+  local s t
+  s=$(printf '%s' "$1" | sed -E 's/^[[:space:]({]+//')
+  while :; do
+    t="${s%%[[:space:]]*}"
+    [ "$t" = "$s" ] && break
+    case "$t" in
+      # drop the token itself (not "up to the first space": the separator may be a tab)
+      sudo|command|nohup|time|exec|env|-*|*=*) s="${s#"$t"}"; s="${s#"${s%%[![:space:]]*}"}" ;;
+      *) break ;;
+    esac
+    # NOTE: sudo with flag-args (sudo -u root <cmd>) can still hide the head;
+    # permissions.json asks on every Bash(sudo*) as the second layer.
+  done
+  printf '%s' "$s"
+}
+
 # ── Neutralize heredoc bodies (data, not commands) ──
 STRIPPED=$(printf '%s\n' "$COMMAND" | awk '
   skip { if ($0 == term || $0 == "\t" term) { skip=0 }; next }
   {
     line=$0
     if (match(line, /<<-?[[:space:]]*["'\'']?[A-Za-z_][A-Za-z_0-9]*["'\'']?/)) {
-      t=substr(line, RSTART, RLENGTH)
-      gsub(/<<-?[[:space:]]*/, "", t); gsub(/["'\'']/ , "", t)
-      term=t; skip=1
+      # A `<<` inside a quoted string (`echo "cfg << eol"`) is text, not a heredoc:
+      # an odd number of quotes before it means we are inside one.
+      pre=substr(line, 1, RSTART-1)
+      dq=gsub(/"/, "", pre); sq=gsub(/'\''/, "", pre)
+      if (dq % 2 == 0 && sq % 2 == 0) {
+        t=substr(line, RSTART, RLENGTH)
+        gsub(/<<-?[[:space:]]*/, "", t); gsub(/["'\'']/ , "", t)
+        term=t; skip=1
+      }
     }
     print line
   }')
@@ -99,20 +122,11 @@ fi
 # ── Protected-branch push: judged per segment, with `git` at the argv head, on text
 #    with heredocs removed and the quote CHARACTERS removed (not blanked). So a
 #    quoted "main" is still main, while `echo "git push origin main"` is an echo.
+UNQUOTED=$(printf '%s' "$STRIPPED" | sed -e "s/'//g" -e 's/"//g')
 if [ -n "$PROT_RE" ]; then
-  UNQUOTED=$(printf '%s' "$STRIPPED" | sed -e "s/'//g" -e 's/"//g')
   while IFS= read -r pseg; do
-    # ltrim spaces and the subshell/group openers `(` `{`, so `(git push …)` is a git
-    pseg=$(printf '%s' "$pseg" | sed -E 's/^[[:space:]({]+//')
+    pseg=$(seg_head_strip "$pseg")
     [ -z "$pseg" ] && continue
-    while :; do   # same wrapper / env-assignment stripping as the argv-head loop below
-      ptok="${pseg%%[[:space:]]*}"
-      [ "$ptok" = "$pseg" ] && break
-      case "$ptok" in
-        sudo|command|nohup|time|exec|env|-*|*=*) pseg="${pseg#"$ptok"}"; pseg="${pseg#"${pseg%%[![:space:]]*}"}" ;;
-        *) break ;;
-      esac
-    done
     ptok="${pseg%%[[:space:]]*}"
     [ "${ptok##*/}" = "git" ] || continue
     printf '%s' "$pseg" | grep -qE '^[^[:space:]]*git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?([[:space:]]+-[^[:space:]]+)*[[:space:]]+push([[:space:]]|$)' || continue
@@ -142,15 +156,27 @@ $(printf '%s\n' "$UNQUOTED" | tr '|;&' '\n\n\n')
 EOF
 fi
 
-# SQL rides inside quotes (psql -c '…'), so these two run with quotes intact — but
-# with heredoc bodies removed: writing a migration FILE (`cat > x.sql <<EOF`) is the
-# thing the message asks for, not the thing it blocks.
-if printf '%s' "$STRIPPED" | grep -qiE '\bdrop[[:space:]]+(table|database|schema)\b'; then
-  block "destructive database operation — commit a migration file instead (Git & Safety §7)"
-fi
-if printf '%s' "$STRIPPED" | grep -qiE '\bdelete[[:space:]]+from\b[^|;&]*\bwhere[[:space:]]+1\b'; then
-  block "mass data deletion — commit a migration file instead (Git & Safety §7)"
-fi
+# ── Destructive SQL: only in a segment whose head is a database client. The SQL
+#    rides inside quotes (psql -c '…'), so quotes are removed, not blanked; heredoc
+#    bodies are already gone, so writing a migration FILE is allowed — it is what
+#    the message asks for. `grep -i 'drop table' schema.sql` merely mentions it.
+while IFS= read -r sseg; do
+  sseg=$(seg_head_strip "$sseg")
+  [ -z "$sseg" ] && continue
+  stok="${sseg%%[[:space:]]*}"
+  case "${stok##*/}" in
+    psql|mysql|mariadb|sqlite3|sqlcmd|clickhouse-client|cockroach|duckdb|usql) ;;
+    *) continue ;;
+  esac
+  if printf '%s' "$sseg" | grep -qiE '\bdrop[[:space:]]+(table|database|schema)\b'; then
+    block "destructive database operation — commit a migration file instead (Git & Safety §7)"
+  fi
+  if printf '%s' "$sseg" | grep -qiE '\bdelete[[:space:]]+from\b.*\bwhere[[:space:]]+1\b'; then
+    block "mass data deletion — commit a migration file instead (Git & Safety §7)"
+  fi
+done <<EOF
+$(printf '%s\n' "$UNQUOTED" | tr '|;&' '\n\n\n')
+EOF
 
 case "$ANALYZED" in
   *"> .env"*|*">> .env"*|*"> .env."*|*">> .env."*)
@@ -169,21 +195,10 @@ fi
 # tr, not sed: a newline in a sed replacement is not portable across BSD/GNU.
 SEGS=$(printf '%s\n' "$ANALYZED" | tr '|;&' '\n\n\n')
 while IFS= read -r seg; do
-  seg=$(printf '%s' "$seg" | sed -E 's/^[[:space:]({]+//')   # ltrim, incl. `(` and `{` openers
-  [ -z "$seg" ] && continue
-  # strip wrappers and env-assignment prefixes to reach the real head — judged
+  # wrappers and env-assignment prefixes stripped to reach the real head — judged
   # on the FIRST TOKEN only, so 'dd if=…' is never read as VAR=value
-  while :; do
-    head_tok="${seg%%[[:space:]]*}"
-    [ "$head_tok" = "$seg" ] && break
-    case "$head_tok" in
-      # drop the token itself (not "up to the first space": the separator may be a tab)
-      sudo|command|nohup|time|exec|env|-*|*=*) seg="${seg#"$head_tok"}"; seg="${seg#"${seg%%[![:space:]]*}"}" ;;
-      *) break ;;
-    esac
-    # NOTE: sudo with flag-args (sudo -u root <cmd>) can still hide the head;
-    # permissions.json asks on every Bash(sudo*) as the second layer.
-  done
+  seg=$(seg_head_strip "$seg")
+  [ -z "$seg" ] && continue
   head_tok="${seg%%[[:space:]]*}"
   head_base="${head_tok##*/}"
 
