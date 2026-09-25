@@ -1,0 +1,14 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "Bash",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash @PREFIX@/hooks/block-dangerous.sh",
+          "timeout": 10
+        }
+      ]
+    }
+  ]
+}

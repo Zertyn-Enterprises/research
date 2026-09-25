@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# managed-by: multi-agent-coding
+# agentsify — make AGENTS.md the canonical instructions file of a repo, with
+# CLAUDE.md a symlink to it, so every CLI reads the same rules.
+#
+# Usage: agentsify [--dry-run] [--stage] [repo-root]
+#   repo-root   defaults to the git top level of the current directory (works
+#               inside a git worktree), else the current directory
+#   --dry-run   print what would change and write nothing
+#   --stage     git add the files it created, moved or linked (never commits)
+#
+# Handled automatically:
+#   neither file exists              -> AGENTS.md from the kit template + symlink
+#   CLAUDE.md regular, no AGENTS.md  -> CLAUDE.md becomes AGENTS.md (git mv when
+#                                       tracked) + CLAUDE.md symlink back to it
+#   CLAUDE.md -> AGENTS.md           -> nothing to do
+#   CLAUDE.md -> missing target      -> the broken symlink is replaced
+#
+# Needs a human (exit 1):
+#   CLAUDE.md symlinks to another file that exists (rules and state are mixed)
+#   CLAUDE.md and AGENTS.md are two different regular files
+#
+# Exit codes: 0 standard in place · 1 needs a human · 2 usage error
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: agentsify [--dry-run] [--stage] [repo-root]
+
+Makes AGENTS.md the canonical instructions file and CLAUDE.md a symlink to it.
+
+  repo-root   defaults to the git top level of the current directory
+  --dry-run   print what would change, write nothing
+  --stage     git add the files it created, moved or linked (never commits)
+
+Exit codes: 0 standard in place - 1 needs a human - 2 usage error
+USAGE
+}
+
+dry=false
+stage=false
+root=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) dry=true ;;
+    --stage)   stage=true ;;
+    -h|--help) usage; exit 0 ;;
+    -*)        echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;
+    *)
+      if [ -n "$root" ]; then echo "ERROR: too many arguments" >&2; exit 2; fi
+      root="$1"
+      ;;
+  esac
+  shift
+done
+
+if [ -z "$root" ]; then
+  root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+fi
+if [ ! -d "$root" ]; then
+  echo "ERROR: not a directory: $root" >&2
+  exit 2
+fi
+cd "$root"
+
+KIT_HOME="${MULTI_AGENT_CODING_HOME:-$HOME/.multi-agent-coding}"
+TPL="$KIT_HOME/templates/AGENTS.md"
+
+say() {
+  if $dry; then printf 'would %s\n' "$1"; else printf '%s\n' "$1"; fi
+}
+
+have_agents=false
+[ -e AGENTS.md ] && have_agents=true
+
+# CLAUDE.md is one of: absent, a regular file, a good symlink, a broken symlink,
+# or a symlink to something else entirely. Classify it once.
+claude_kind="none"
+link_target=""
+if [ -L CLAUDE.md ]; then
+  link_target="$(readlink CLAUDE.md)"
+  if [ "$link_target" = "AGENTS.md" ] && $have_agents; then
+    echo "ok: $root is already standard (CLAUDE.md -> AGENTS.md)"
+    exit 0
+  fi
+  if [ -e CLAUDE.md ]; then
+    claude_kind="link-elsewhere"
+  else
+    claude_kind="link-broken"
+  fi
+elif [ -f CLAUDE.md ]; then
+  claude_kind="file"
+fi
+
+if [ "$claude_kind" = "link-elsewhere" ]; then
+  echo "ERROR: $root/CLAUDE.md is a symlink to '$link_target' — rules and product state are mixed there." >&2
+  echo "       Split them by hand (rules -> AGENTS.md, state -> CONTEXT.md), then:" >&2
+  echo "       rm CLAUDE.md && ln -s AGENTS.md CLAUDE.md" >&2
+  exit 1
+fi
+
+if [ "$claude_kind" = "file" ] && $have_agents; then
+  echo "ERROR: $root has CLAUDE.md and AGENTS.md as two different regular files." >&2
+  echo "       Merge them by hand into AGENTS.md, then re-run agentsify." >&2
+  exit 1
+fi
+
+if [ "$claude_kind" = "link-broken" ]; then
+  say "replace: broken symlink CLAUDE.md -> $link_target"
+  $dry || rm -f CLAUDE.md
+fi
+
+if [ "$claude_kind" = "file" ]; then
+  if git ls-files --error-unmatch CLAUDE.md >/dev/null 2>&1; then
+    say "move: CLAUDE.md -> AGENTS.md (git mv, file is tracked)"
+    $dry || git mv CLAUDE.md AGENTS.md
+  else
+    say "move: CLAUDE.md -> AGENTS.md"
+    $dry || mv CLAUDE.md AGENTS.md
+  fi
+  have_agents=true
+elif ! $have_agents; then
+  if [ ! -r "$TPL" ]; then
+    echo "ERROR: template not found: $TPL" >&2
+    echo "       Install level 4 (plan) of this kit, or set MULTI_AGENT_CODING_HOME." >&2
+    exit 1
+  fi
+  say "create: AGENTS.md from $TPL"
+  $dry || sed "s|<repo>|$(basename "$root")|g" "$TPL" > AGENTS.md
+  have_agents=true
+fi
+
+say "link: CLAUDE.md -> AGENTS.md"
+$dry || ln -s AGENTS.md CLAUDE.md
+
+if $stage; then
+  if $dry; then
+    say "stage: git add AGENTS.md CLAUDE.md"
+  elif ! git add -- AGENTS.md CLAUDE.md 2>/dev/null; then
+    echo "note: could not stage the files (not a git repository?)" >&2
+  fi
+fi
+
+if $dry; then
+  echo "dry run: nothing was written"
+else
+  echo "done: AGENTS.md is canonical, CLAUDE.md is a symlink to it — review it before committing"
+fi
