@@ -91,33 +91,54 @@ fi
 ANALYZED=$(printf '%s' "$STRIPPED" | sed -E "s/'[^']*'/QSTR/g" | sed -E 's/"[^"]*"/QSTR/g')
 
 # ── Full-command patterns ──
-if printf '%s' "$ANALYZED" | grep -qE '(^|[|;&[:space:]])(curl|wget)[^|;&]*\|[[:space:]]*(sudo[[:space:]]+)?(ba|z|da)?sh([[:space:]]|$)'; then
-  block "piping a remote script to a shell (Git & Safety §2)"
+# A remote payload piped into any interpreter, not only a shell.
+if printf '%s' "$ANALYZED" | grep -qE '(^|[|;&[:space:]])(curl|wget)[^|;&]*\|[[:space:]]*(sudo[[:space:]]+)?(env[[:space:]]+)?((ba|z|da|k)?sh|python[0-9.]*|node|ruby|perl|php)([[:space:]]|$)'; then
+  block "piping a remote script to an interpreter (Git & Safety §2)"
 fi
 
-if [ -n "$PROT_RE" ] && printf '%s' "$ANALYZED" | grep -qE '(^|[|;&[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?([[:space:]]+-[^[:space:]]+)*[[:space:]]+push([[:space:]]|$)'; then
-  # a protected branch in ANY form: as branch, as refspec destination (`HEAD:main`,
-  # `HEAD:refs/heads/main`), quoted or not, any remote. Checked on the text with
-  # quotes intact: a quoted "main" is still main.
-  if printf '%s' "$STRIPPED" | grep -qE '[[:space:]]push[^|;&]*[[:space:]:]["'\'']?('"$PROT_RE"')["'\'']?([[:space:]]|$)' \
-     || printf '%s' "$STRIPPED" | grep -qE '[[:space:]]push[^|;&]*refs/(heads|remotes/[^/[:space:]]+)/('"$PROT_RE"')["'\'']?([[:space:]]|$)'; then
-    block "push to a protected branch ($PROTECTED_BRANCHES), any remote or refspec form — it moves by PR only (Git & Safety §3)"
-  fi
-  # bare `git push` (no explicit target): dangerous only when the branch IS protected
-  if ! printf '%s' "$ANALYZED" | grep -qE '[[:space:]]push([[:space:]]+-[^[:space:]]+)*[[:space:]]+[^-[:space:]]'; then
-    CWD=""
-    if command -v jq >/dev/null 2>&1; then
-      CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
+# ── Protected-branch push: judged per segment, with `git` at the argv head, on text
+#    with heredocs removed and the quote CHARACTERS removed (not blanked). So a
+#    quoted "main" is still main, while `echo "git push origin main"` is an echo.
+if [ -n "$PROT_RE" ]; then
+  UNQUOTED=$(printf '%s' "$STRIPPED" | sed -e "s/'//g" -e 's/"//g')
+  while IFS= read -r pseg; do
+    pseg="${pseg#"${pseg%%[![:space:]]*}"}"
+    [ -z "$pseg" ] && continue
+    while :; do   # same wrapper / env-assignment stripping as the argv-head loop below
+      ptok="${pseg%%[[:space:]]*}"
+      [ "$ptok" = "$pseg" ] && break
+      case "$ptok" in
+        sudo|command|nohup|time|exec|env|-*|*=*) pseg="${pseg#* }"; pseg="${pseg#"${pseg%%[![:space:]]*}"}" ;;
+        *) break ;;
+      esac
+    done
+    ptok="${pseg%%[[:space:]]*}"
+    [ "${ptok##*/}" = "git" ] || continue
+    printf '%s' "$pseg" | grep -qE '^[^[:space:]]*git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?([[:space:]]+-[^[:space:]]+)*[[:space:]]+push([[:space:]]|$)' || continue
+    # a protected branch in ANY form: as branch, as refspec destination (`HEAD:main`,
+    # `HEAD:refs/heads/main`), any remote.
+    if printf '%s' "$pseg" | grep -qE '[[:space:]]push.*[[:space:]:]('"$PROT_RE"')([[:space:]]|$)' \
+       || printf '%s' "$pseg" | grep -qE '[[:space:]]push.*refs/(heads|remotes/[^/[:space:]]+)/('"$PROT_RE"')([[:space:]]|$)'; then
+      block "push to a protected branch ($PROTECTED_BRANCHES), any remote or refspec form — it moves by PR only (Git & Safety §3)"
     fi
-    BR=$(git -C "${CWD:-.}" rev-parse --abbrev-ref HEAD 2>/dev/null) || BR=""
-    if [ -n "$BR" ]; then
-      for _b in $PROTECTED_BRANCHES; do
-        if [ "$BR" = "$_b" ]; then
-          block "bare 'git push' while on $BR — a protected branch moves by PR only (Git & Safety §3)"
-        fi
-      done
+    # bare `git push` (no explicit target): dangerous only when the branch IS protected
+    if ! printf '%s' "$pseg" | grep -qE '[[:space:]]push([[:space:]]+-[^[:space:]]+)*[[:space:]]+[^-[:space:]]'; then
+      CWD=""
+      if command -v jq >/dev/null 2>&1; then
+        CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null) || true
+      fi
+      BR=$(git -C "${CWD:-.}" rev-parse --abbrev-ref HEAD 2>/dev/null) || BR=""
+      if [ -n "$BR" ]; then
+        for _b in $PROTECTED_BRANCHES; do
+          if [ "$BR" = "$_b" ]; then
+            block "bare 'git push' while on $BR — a protected branch moves by PR only (Git & Safety §3)"
+          fi
+        done
+      fi
     fi
-  fi
+  done <<EOF
+$(printf '%s\n' "$UNQUOTED" | tr '|;&' '\n\n\n')
+EOF
 fi
 
 # SQL rides inside quotes (psql -c '…'), so these two run on the RAW command.

@@ -71,8 +71,9 @@ This is the most important limitation on the page.
 
 ## Installer constraints
 
-- **`jq` is required for level 2 and above.** The settings merge is a jq transform.
-  Without jq, levels 2 and 3 cannot run; `doctor.sh` reports it.
+- **`jq` is required for levels 2 and 3.** The settings merge is a jq transform.
+  Levels 1 and 4 install without it. `doctor.sh` reports a missing jq, and
+  `install.sh` refuses levels 2 and 3 before writing anything.
 - **bash 3.2 is the floor**, which rules out associative arrays, `mapfile`, and
   in-place `sed -i`. If you send a patch, it has to hold to that.
 - **A global `core.hooksPath` already set wins.** Level 2 will not overwrite it. It

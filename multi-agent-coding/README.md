@@ -221,8 +221,8 @@ reinstalling is idempotent instead of backing up its own previous copy.
 
 ## Requirements
 
-`git`, `bash` 3.2 or newer (the macOS default qualifies), and `jq` for level 2 and
-above. Optional: `gitleaks` for the pre-commit hook, `python3`. `doctor.sh` reports
+`git`, `bash` 3.2 or newer (the macOS default qualifies), and `jq` for levels 2 and 3.
+Optional: `gitleaks` for the pre-commit hook, `python3`. `doctor.sh` reports
 what is missing.
 
 ## License

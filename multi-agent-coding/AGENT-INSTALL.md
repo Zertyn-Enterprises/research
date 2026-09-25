@@ -25,7 +25,8 @@ summarise it. It reports the operating system (macOS, Linux, or WSL2), the bash
 version, whether `git`, `jq`, `gitleaks` and `python3` are present, which CLIs it
 detected, and every existing file that an install would back up.
 
-If it reports a missing `jq`, say so and stop: levels 2 and above need it.
+If it reports a missing `jq`, say so: levels 2 and 3 need it and the installer
+refuses them without it. Levels 1 and 4 still work.
 
 ## 2. Ask which levels the user wants
 
