@@ -76,6 +76,11 @@ while [ $# -gt 0 ]; do
 done
 
 if [ "$DO_UNINSTALL" = "1" ]; then
+  # uninstall.sh removes whatever the manifest lists; it has no level selection, so
+  # accepting --level/--only/--link here would silently mean "everything".
+  if [ -n "$LEVEL_MAX" ] || [ -n "$ONLY" ] || [ "${KIT_LINK:-0}" = "1" ]; then
+    kit_usage_die "--uninstall takes no --level, --only or --link (it removes everything the manifest lists)"
+  fi
   [ -f "$KIT_ROOT/uninstall.sh" ] || kit_die "missing package file: uninstall.sh"
   set --
   while IFS= read -r a; do
@@ -165,6 +170,11 @@ kit_say "=== doctor"
 kit_say ""
 if ! bash "$KIT_ROOT/doctor.sh" --prefix "$KIT_PREFIX"; then
   kit_die "doctor found a blocking problem (see above) — nothing was written"
+fi
+# jq is optional for the doctor but mandatory for the levels that edit JSON. Refuse
+# here, before the first write, rather than install level 1 and die halfway.
+if { sel_has safety || sel_has claude-quality; } && ! kit_have jq; then
+  kit_die "jq is required for level 2 (safety) and level 3 (claude-quality) — install it (brew install jq / apt-get install jq) or choose --only rules,plan. Nothing was written."
 fi
 
 HAS_CLAUDE=0; kit_has_claude && HAS_CLAUDE=1

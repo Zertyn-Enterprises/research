@@ -376,4 +376,39 @@ t_assert_grep "it says what it restored" "restored $HOME/.claude/rules/core.md" 
 t_assert_grep "it put the original Codex cap back" "^project_doc_max_bytes = 4096$" "$HOME/.codex/config.toml"
 t_assert_grep "the restored config.toml keeps its other keys" '^model = "keep-me"$' "$HOME/.codex/config.toml"
 
+# ---------------------------------------------------------------- --uninstall takes no selection
+
+new_home uninst-guard .claude
+rc="$(run_log "$LOGS/uninst-only.log" bash "$PKG/install.sh" --uninstall --only rules)"
+t_assert_eq "--uninstall with --only is a usage error (exit 2)" "2" "$rc"
+t_assert_grep "it says why" "removes everything the manifest lists" "$LOGS/uninst-only.log"
+rc="$(run_log "$LOGS/uninst-level.log" bash "$PKG/install.sh" --uninstall --level 2 --yes)"
+t_assert_eq "--uninstall with --level is a usage error (exit 2)" "2" "$rc"
+rc="$(run_log "$LOGS/uninst-link.log" bash "$PKG/install.sh" --uninstall --link --yes)"
+t_assert_eq "--uninstall with --link is a usage error (exit 2)" "2" "$rc"
+
+# ---------------------------------------------------------------- jq preflight, before any write
+
+new_home nojq .claude .codex
+STUB="$HOME/stub-bin"
+mkdir -p "$STUB"
+for b in bash sh git sed awk grep mkdir cp ln cat printf mktemp dirname basename date tr head tail \
+         wc sort uniq find chmod mv rm readlink cut env ls id uname touch tee diff cmp expr sleep \
+         true false test stat od hostname xargs; do
+  p="$(command -v "$b" 2>/dev/null || true)"
+  [ -n "$p" ] && ln -sf "$p" "$STUB/$b"
+done
+t_assert_fail "the stub PATH really hides jq" env -i "PATH=$STUB" "HOME=$HOME" "$STUB/bash" -c 'command -v jq'
+rc="$(run_log "$LOGS/nojq-safety.log" env -i "PATH=$STUB" "HOME=$HOME" "GIT_CONFIG_GLOBAL=$HOME/.gitconfig" \
+      MAC_SKIP_PATH_DETECT=1 "$STUB/bash" "$PKG/install.sh" --yes --only safety)"
+t_assert_eq "level 2 without jq aborts (exit 1)" "1" "$rc"
+t_assert_grep "it names jq and the levels that need it" "jq is required for level 2" "$LOGS/nojq-safety.log"
+t_assert_grep "it says nothing was written" "Nothing was written" "$LOGS/nojq-safety.log"
+t_assert_eq "it wrote no manifest" "1" "$(rc_of test -e "$HOME/.multi-agent-coding/manifest.txt")"
+t_assert_eq "it wrote nothing under the prefix" "1" "$(rc_of test -e "$HOME/.multi-agent-coding")"
+rc="$(run_log "$LOGS/nojq-rules.log" env -i "PATH=$STUB" "HOME=$HOME" "GIT_CONFIG_GLOBAL=$HOME/.gitconfig" \
+      MAC_SKIP_PATH_DETECT=1 "$STUB/bash" "$PKG/install.sh" --yes --only rules,plan)"
+t_assert_eq "levels 1 and 4 install without jq (exit 0)" "0" "$rc"
+t_assert_grep "the rules landed without jq" "managed-by" "$HOME/.claude/rules/core.md"
+
 t_done

@@ -54,15 +54,18 @@ for _b in $PROTECTED_BRANCHES; do
   if [ -z "$PROT_RE" ]; then PROT_RE="$_e"; else PROT_RE="$PROT_RE|$_e"; fi
 done
 
-# ── Belt and suspenders: the root/home delete, checked on the RAW command so a
-#    quoted target ("/" or '$HOME') can't slip past the quote-blanking below.
-#    The target must be exactly / ~ ~/ $HOME ${HOME}, optionally with a trailing
-#    wildcard — `rm -rf /tmp/build` or `rm -rf ~/proj/dist` is ordinary work.
-RM_FLAGS='-[[:alnum:]]*([rR][[:alnum:]]*[fF]|[fF][[:alnum:]]*[rR])[[:alnum:]]*'
+# ── Root/home delete. The target must be exactly / ~ ~/ $HOME ${HOME}, optionally
+#    with a trailing wildcard — `rm -rf /tmp/build` or `rm -rf ~/proj/dist` is
+#    ordinary work. Flags may be short or long, combined or separate (-rf, -fr,
+#    -r -f, --recursive --force, -f --recursive). Checked on the command with
+#    heredocs removed but quotes intact, so `rm -rf "/"` cannot hide in quotes.
 RM_TARGET='["'"'"']?(/|~|~/|\$HOME|\$HOME/|\$\{HOME\}|\$\{HOME\}/)(\*|/\*)?["'"'"']?'
-if printf '%s' "$COMMAND" | grep -qE "(^|[[:space:];&|(])rm[[:space:]]+${RM_FLAGS}[[:space:]]+${RM_TARGET}([[:space:]]|\$|[;&|)])"; then
-  block "recursive force delete of / or ~ (Git & Safety §2)"
-fi
+rm_root_delete() { # <text> → 0 when an rm with recursive+force flags targets / or the home dir
+  local m
+  m=$(printf '%s' "$1" | grep -oE "(^|[[:space:];&|(])rm([[:space:]]+-[^[:space:]]+)+[[:space:]]+${RM_TARGET}([[:space:]]|\$|[;&|)])") || return 1
+  printf '%s' "$m" | grep -qE '(^|[[:space:]])(-[[:alnum:]]*[rR][[:alnum:]]*|--recursive)([[:space:]]|$)' \
+    && printf '%s' "$m" | grep -qE '(^|[[:space:]])(-[[:alnum:]]*[fF][[:alnum:]]*|--force)([[:space:]]|$)'
+}
 
 # ── Neutralize heredoc bodies (data, not commands) ──
 STRIPPED=$(printf '%s\n' "$COMMAND" | awk '
@@ -77,6 +80,10 @@ STRIPPED=$(printf '%s\n' "$COMMAND" | awk '
     print line
   }')
 
+if rm_root_delete "$STRIPPED"; then
+  block "recursive force delete of / or ~ (Git & Safety §2)"
+fi
+
 # ── Blank quoted strings: their contents are arguments, never argv heads ──
 ANALYZED=$(printf '%s' "$STRIPPED" | sed -E "s/'[^']*'/QSTR/g" | sed -E 's/"[^"]*"/QSTR/g')
 
@@ -86,8 +93,11 @@ if printf '%s' "$ANALYZED" | grep -qE '(^|[|;&[:space:]])(curl|wget)[^|;&]*\|[[:
 fi
 
 if [ -n "$PROT_RE" ] && printf '%s' "$ANALYZED" | grep -qE '(^|[|;&[:space:]])git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?([[:space:]]+-[^[:space:]]+)*[[:space:]]+push([[:space:]]|$)'; then
-  # a protected branch in ANY form: as branch, as refspec destination, any remote
-  if printf '%s' "$ANALYZED" | grep -qE '[[:space:]]push[^|;&]*[[:space:]:]("|'\'')?('"$PROT_RE"')([[:space:]]|$|"|'\'')'; then
+  # a protected branch in ANY form: as branch, as refspec destination (`HEAD:main`,
+  # `HEAD:refs/heads/main`), quoted or not, any remote. Checked on the text with
+  # quotes intact: a quoted "main" is still main.
+  if printf '%s' "$STRIPPED" | grep -qE '[[:space:]]push[^|;&]*[[:space:]:]["'\'']?('"$PROT_RE"')["'\'']?([[:space:]]|$)' \
+     || printf '%s' "$STRIPPED" | grep -qE '[[:space:]]push[^|;&]*refs/(heads|remotes/[^/[:space:]]+)/('"$PROT_RE"')["'\'']?([[:space:]]|$)'; then
     block "push to a protected branch ($PROTECTED_BRANCHES), any remote or refspec form — it moves by PR only (Git & Safety §3)"
   fi
   # bare `git push` (no explicit target): dangerous only when the branch IS protected
@@ -167,8 +177,7 @@ while IFS= read -r seg; do
     tccutil)
       block "modifying the system permission database (Git & Safety §2)" ;;
     rm)
-      if printf '%s' "$seg" | grep -qE '^rm[[:space:]]+(-[^[:space:]]*[rR][^[:space:]]*[fF]|-[^[:space:]]*[fF][^[:space:]]*[rR])' \
-         && printf '%s' "$seg" | grep -qE '[[:space:]](/|~|~/|\$HOME)(/\*|\*)?([[:space:]]|$)'; then
+      if rm_root_delete "$seg"; then
         block "recursive force delete of / or ~ (Git & Safety §2)"
       fi ;;
     chmod)

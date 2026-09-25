@@ -43,7 +43,16 @@ rm -rf '~'
 rm -rf "$HOME"
 rm -rf ${HOME}/*
 cd /tmp && rm -rf /
+rm --recursive --force /
+rm -f --recursive ~
+rm -r -f $HOME
+rm -Rf /*
 sudo rm -rf /
+git push origin "main"
+git push origin 'master'
+git push origin HEAD:refs/heads/main
+git push origin refs/heads/main
+git push -f origin "HEAD:main"
 chmod -R 777 /
 chmod -R 777 .
 mkfs.ext4 /dev/sda1
@@ -83,6 +92,12 @@ git commit -m "fix shutdown handling on android"
 git commit -m "reboot flow: retry parted uploads"
 git push origin feat/my-branch
 git push -u origin feat/config-hygiene
+git push origin feat/main-menu
+git push origin "feat/mainline"
+git push origin HEAD:refs/heads/feat/main-menu
+rm -r build
+rm --recursive dist
+rm -rf -- ./out
 rm -rf node_modules
 rm -rf ./dist
 rm -rf /tmp/build

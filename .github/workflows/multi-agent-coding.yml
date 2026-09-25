@@ -44,7 +44,9 @@ jobs:
           command -v jq >/dev/null 2>&1 || brew install jq
 
       # Required, not optional: tests/test-pre-commit.sh needs gitleaks, and a skipped
-      # test turns the suite yellow (exit 3). Pinned so a runner never pulls a surprise.
+      # test turns the suite yellow (exit 3). Linux downloads a pinned release; macOS
+      # uses whatever formula Homebrew ships (brew has no pin), so the two legs may
+      # run different gitleaks versions.
       - name: Install gitleaks
         env:
           GITLEAKS_VERSION: "8.30.1"

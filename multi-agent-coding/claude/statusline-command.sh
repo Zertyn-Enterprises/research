@@ -54,7 +54,7 @@ IFS="$FS" read -r cwd model used_pct vim_mode agent_name session_name \
     (.context_window.total_input_tokens // ""),
     (.context_window.total_output_tokens // ""),
     (.cost.total_cost_usd // "")
-  ] | map(tostring) | join("")')
+  ] | map(tostring) | join("\u001f")')
 
 # --- Helpers ---
 is_num() { case "${1:-}" in '' | *[!0-9]*) return 1 ;; *) return 0 ;; esac; }
