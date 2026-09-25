@@ -126,6 +126,25 @@ ANALYZED=$(printf '%s' "$STRIPPED" | sed -E "s/'[^']*'/QSTR/g" | sed -E 's/"[^"]
 if printf '%s' "$ANALYZED" | grep -qE '(^|[|;&[:space:]])(curl|wget)[^|;&]*\|[[:space:]]*(sudo[[:space:]]+)?(env[[:space:]]+)?((ba|z|da|k)?sh|python[0-9.]*|node|ruby|perl|php)([[:space:]]|$)'; then
   block "piping a remote script to an interpreter (Git & Safety §2)"
 fi
+# Text piped into a shell (`echo 'rm -rf /' | sh`): the payload is on the RAW text,
+# so run the same checks on it as if it were the command itself.
+if printf '%s' "$ANALYZED" | grep -qE '(^|[|;&[:space:]])(echo|printf|cat)[^|;&]*\|[[:space:]]*(sudo[[:space:]]+)?(env[[:space:]]+)?(ba|z|da|k)?sh([[:space:]]|$)'; then
+  PIPED=$(printf '%s' "$STRIPPED" \
+    | sed -E 's/^[[:space:]]*(echo|printf|cat)[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*//; s/[[:space:]]*\|[[:space:]]*(sudo[[:space:]]+)?(env[[:space:]]+)?(ba|z|da|k)?sh([[:space:]].*)?$//' \
+    | sed -e "s/^['\"]//" -e "s/['\"]\$//" -e 's/\\n$//')
+  if [ -n "$PIPED" ] && [ "$PIPED" != "$STRIPPED" ]; then
+    # Run this very hook on the piped text: one set of rules, no second copy.
+    if command -v jq >/dev/null 2>&1; then
+      payload=$(jq -cn --arg c "$PIPED" '{tool_name:"Bash",tool_input:{command:$c}}')
+    else
+      payload=$(printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' \
+        "$(printf '%s' "$PIPED" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n' ' ')")
+    fi
+    if ! printf '%s' "$payload" | bash "$0" >/dev/null 2>&1; then
+      block "text piped into a shell that would run a blocked command (Git & Safety §2)"
+    fi
+  fi
+fi
 
 # ── Protected-branch push: judged per segment, with `git` at the argv head, on text
 #    with heredocs removed and the quote CHARACTERS removed (not blanked). So a

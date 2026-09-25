@@ -388,6 +388,9 @@ t_assert_eq "install with a prefix containing & and | exits 0" "0" "$rc"
 t_assert_eq "the hook command carries the prefix verbatim, quoted" "bash \"$WEIRD/hooks/block-dangerous.sh\"" \
   "$(jq -r '.hooks.PreToolUse[].hooks[].command' "$HOME/.claude/settings.json" | head -1)"
 t_assert_eq "install rejects an empty --prefix with exit 2" "2" "$(rc_of bash "$PKG/install.sh" --prefix "" --yes)"
+t_assert_eq "install rejects --only= with exit 2 (never 'all levels' by accident)" "2" "$(rc_of bash "$PKG/install.sh" --only= --yes)"
+t_assert_eq "install rejects --only '' with exit 2" "2" "$(rc_of bash "$PKG/install.sh" --only "" --yes)"
+t_assert_eq "install rejects --level= with exit 2" "2" "$(rc_of bash "$PKG/install.sh" --level= --yes)"
 
 # ---------------------------------------------------------------- a prefix that escapes HOME through ..
 
@@ -505,5 +508,17 @@ rc="$(run_log "$LOGS/nojq-rules.log" env -i "PATH=$STUB" "HOME=$HOME" "GIT_CONFI
       MAC_SKIP_PATH_DETECT=1 "$STUB/bash" "$PKG/install.sh" --yes --only rules,plan)"
 t_assert_eq "levels 1 and 4 install without jq (exit 0)" "0" "$rc"
 t_assert_grep "the rules landed without jq" "managed-by" "$HOME/.claude/rules/core.md"
+
+# uninstall without jq, after an install WITH jq: it must not abort halfway
+new_home nojq-uninst .claude .codex .grok
+bash "$PKG/install.sh" --yes --only rules,safety,claude-quality > "$LOGS/nojq-u-install.log" 2>&1
+rc="$(run_log "$LOGS/nojq-uninst.log" env -i "PATH=$STUB" "HOME=$HOME" "GIT_CONFIG_GLOBAL=$HOME/.gitconfig" \
+      MAC_SKIP_PATH_DETECT=1 "$STUB/bash" "$PKG/uninstall.sh" --yes)"
+t_assert_eq "uninstall without jq exits 0" "0" "$rc"
+t_assert_grep "it warns about the deny/ask lists it left" "jq not found — left the deny/ask lists" "$LOGS/nojq-uninst.log"
+t_assert_grep "it warns about the statusLine it left" "jq not found — left .statusLine" "$LOGS/nojq-uninst.log"
+t_assert_eq "it still removed the rules file" "1" "$(rc_of test -e "$HOME/.claude/rules/core.md")"
+t_assert_eq "it still removed the hook script" "1" "$(rc_of test -e "$HOME/.multi-agent-coding/hooks/block-dangerous.sh")"
+t_assert_eq "it still removed the Grok hook file" "1" "$(rc_of test -e "$HOME/.grok/hooks/multi-agent-coding.json")"
 
 t_done

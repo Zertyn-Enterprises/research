@@ -69,7 +69,11 @@ fmt_tokens() { # 1234 -> 1.2k, 1200000 -> 1.2M
 }
 
 # --- CWD: shorten $HOME to ~ ---
-short_cwd="${cwd/#$HOME/~}"
+# prefix test, not a pattern substitution: a HOME with `[`, `*` or `?` must not glob
+case "$cwd" in
+    "$HOME"*) short_cwd="~${cwd#"$HOME"}" ;;
+    *)        short_cwd="$cwd" ;;
+esac
 [ -n "$short_cwd" ] || short_cwd="?"
 
 # --- Git: branch, dirty marker, ahead/behind ---

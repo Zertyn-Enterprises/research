@@ -111,6 +111,9 @@ sh -c "git push origin main"
 bash -c 'psql -c "DROP TABLE users"'
 $(psql -c 'DROP TABLE users')
 /bin/sh -c "git push origin master"
+echo 'git push origin main' | sh
+printf 'rm -rf /\n' | bash
+echo "shutdown -h now" | sudo sh
 CASES
 
 echo "-- must ALLOW (rc=0) --"
@@ -166,6 +169,9 @@ grep -c = .env
 sh -c "git status"
 bash -c 'npm test'
 git commit -m "fix: handle > .env redirects in the docs"
+echo 'ls -la' | sh
+printf 'npm test\n' | bash
+echo "hello" | cat
 claude --model opus --tools "" -p "review"
 CASES
 

@@ -208,6 +208,11 @@ while IFS= read -r p; do
     LEFT=$((LEFT + 1))
     continue
   fi
+  if ! kit_have jq; then
+    kit_warn "jq not found — left the deny/ask lists in $p alone (install jq and re-run to remove them)"
+    LEFT=$((LEFT + 1))
+    continue
+  fi
   PFRAG="$(kit_fragment config/permissions.json)"
   kit_json_apply "$p" --argjson frag "$PFRAG" "$KIT_JQ_DEL_PERMS"
   if [ "$KIT_JSON_CHANGED" = "1" ]; then
@@ -227,6 +232,11 @@ EOF
 while IFS= read -r p; do
   [ -n "$p" ] || continue
   if [ ! -f "$p" ]; then kit_info "already gone: $p"; continue; fi
+  if ! kit_have jq; then
+    kit_warn "jq not found — left .statusLine in $p alone (install jq and re-run to unset it)"
+    LEFT=$((LEFT + 1))
+    continue
+  fi
   cur="$(jq -r '.statusLine.command // ""' "$p" 2>/dev/null || printf '\n')"
   case "$cur" in
     "$KIT_CLAUDE_DIR/statusline-command.sh"|"bash $KIT_CLAUDE_DIR/statusline-command.sh"|"bash \"$KIT_CLAUDE_DIR/statusline-command.sh\""|"$KIT_PREFIX"/*)

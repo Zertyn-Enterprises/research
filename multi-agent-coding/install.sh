@@ -64,10 +64,10 @@ while [ $# -gt 0 ]; do
     --dry-run)    KIT_DRY_RUN=1; add_passthru "$1" ;;
     --yes|-y)     ASSUME_YES=1; add_passthru "$1" ;;
     --link)       KIT_LINK=1 ;;
-    --level)      shift; [ $# -gt 0 ] || kit_usage_die "--level needs a number 1..4"; LEVEL_MAX="$1" ;;
-    --level=*)    LEVEL_MAX="${1#--level=}" ;;
-    --only)       shift; [ $# -gt 0 ] || kit_usage_die "--only needs a level list"; ONLY="$1" ;;
-    --only=*)     ONLY="${1#--only=}" ;;
+    --level)      shift; [ $# -gt 0 ] && [ -n "$1" ] || kit_usage_die "--level needs a number 1..4"; LEVEL_MAX="$1" ;;
+    --level=*)    LEVEL_MAX="${1#--level=}"; [ -n "$LEVEL_MAX" ] || kit_usage_die "--level needs a number 1..4" ;;
+    --only)       shift; [ $# -gt 0 ] && [ -n "$1" ] || kit_usage_die "--only needs a level list"; ONLY="$1" ;;
+    --only=*)     ONLY="${1#--only=}"; [ -n "$ONLY" ] || kit_usage_die "--only needs a level list" ;;
     --prefix)     shift; [ $# -gt 0 ] && [ -n "$1" ] || kit_usage_die "--prefix needs a non-empty directory"; KIT_PREFIX="$1"; add_passthru "--prefix=$1" ;;
     --prefix=*)   KIT_PREFIX="${1#--prefix=}"; [ -n "$KIT_PREFIX" ] || kit_usage_die "--prefix needs a non-empty directory"; add_passthru "$1" ;;
     --uninstall)  DO_UNINSTALL=1 ;;
