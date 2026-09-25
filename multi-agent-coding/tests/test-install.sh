@@ -33,7 +33,8 @@ make_pkg() { # a complete package: the real scripts, placeholder content files
     done
   } > "$PKG/rules/core.md"
 
-  printf '#!/usr/bin/env bash\n# managed-by: multi-agent-coding\nexit 0\n' > "$PKG/hooks/block-dangerous.sh"
+  # The fixture hook mimics the real contract: exit 2 on the root wipe, 0 otherwise.
+  printf '#!/usr/bin/env bash\n# managed-by: multi-agent-coding\ncase "$(cat)" in *"rm -rf /"*) exit 2 ;; esac\nexit 0\n' > "$PKG/hooks/block-dangerous.sh"
   printf '#!/usr/bin/env bash\n# managed-by: multi-agent-coding\necho fixture-pre-commit\n' > "$PKG/githooks/pre-commit"
   printf '#!/usr/bin/env bash\n# managed-by: multi-agent-coding\necho fixture-statusline\n' > "$PKG/claude/statusline-command.sh"
   printf '#!/usr/bin/env bash\n# managed-by: multi-agent-coding\necho fixture-agentsify\n' > "$PKG/tools/agentsify"
@@ -50,7 +51,7 @@ make_pkg() { # a complete package: the real scripts, placeholder content files
   printf '<!-- managed-by: multi-agent-coding -->\n# PLAN template (fixture)\n' > "$PKG/templates/PLAN.md"
 
   cat > "$PKG/config/hooks.json" <<'JSON'
-{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"bash @PREFIX@/hooks/block-dangerous.sh","timeout":10}]}]}
+{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"bash \"@PREFIX@/hooks/block-dangerous.sh\"","timeout":10}]}]}
 JSON
   cat > "$PKG/config/permissions.json" <<'JSON'
 {"deny":["Read(./.env)","Edit(./.env)"],"ask":["Bash(git push*)","Bash(gh pr merge*)"]}
@@ -177,7 +178,7 @@ t_assert_eq "the Grok hook file has our command" "1" \
 t_assert_eq "level 2 set the global git hooks path" "$PREFIX/githooks" \
   "$(git config --global --get core.hooksPath)"
 t_assert "level 3 wrote the statusline script" test -x "$HOME/.claude/statusline-command.sh"
-t_assert_eq "level 3 set .statusLine to our script" "$HOME/.claude/statusline-command.sh" "$(jqr '.statusLine.command' "$S")"
+t_assert_eq "level 3 set .statusLine to our script, quoted" "bash \"$HOME/.claude/statusline-command.sh\"" "$(jqr '.statusLine.command' "$S")"
 t_assert "level 3 wrote the test-author agent" test -f "$HOME/.claude/agents/test-author.md"
 t_assert "level 3 wrote the context-init skill" test -f "$HOME/.claude/skills/context-init/SKILL.md"
 t_assert "level 3 wrote the techdebt skill" test -f "$HOME/.claude/skills/techdebt/SKILL.md"
@@ -382,9 +383,35 @@ new_home weird-prefix .claude
 WEIRD="$HOME/pre&fix|x"
 rc="$(run_log "$LOGS/weird.log" bash "$PKG/install.sh" --yes --only safety --prefix "$WEIRD")"
 t_assert_eq "install with a prefix containing & and | exits 0" "0" "$rc"
-t_assert_eq "the hook command carries the prefix verbatim" "bash $WEIRD/hooks/block-dangerous.sh" \
+t_assert_eq "the hook command carries the prefix verbatim, quoted" "bash \"$WEIRD/hooks/block-dangerous.sh\"" \
   "$(jq -r '.hooks.PreToolUse[].hooks[].command' "$HOME/.claude/settings.json" | head -1)"
 t_assert_eq "install rejects an empty --prefix with exit 2" "2" "$(rc_of bash "$PKG/install.sh" --prefix "" --yes)"
+
+# ---------------------------------------------------------------- a prefix with spaces
+
+new_home space-prefix .claude .codex .grok
+SPACED="$HOME/my kit"
+rc="$(run_log "$LOGS/spaced.log" bash "$PKG/install.sh" --yes --only safety,claude-quality --prefix "$SPACED")"
+t_assert_eq "install with a prefix containing a space exits 0" "0" "$rc"
+hook_cmd="$(jq -r '.hooks.PreToolUse[].hooks[].command' "$HOME/.claude/settings.json" | head -1)"
+t_assert_eq "the Claude hook command quotes the spaced path" "bash \"$SPACED/hooks/block-dangerous.sh\"" "$hook_cmd"
+t_assert_eq "the hook command actually runs from a shell and blocks" "2" \
+  "$(printf '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' | sh -c "$hook_cmd" >/dev/null 2>&1; echo $?)"
+t_assert_eq "the hook command allows a benign command" "0" \
+  "$(printf '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | sh -c "$hook_cmd" >/dev/null 2>&1; echo $?)"
+t_assert_grep "the Codex hook file quotes the spaced path" "bash \\\\\"$SPACED/hooks/block-dangerous.sh\\\\\"" "$HOME/.codex/hooks.json"
+t_assert_grep "the Grok hook file quotes the spaced path" "bash \\\\\"$SPACED/hooks/block-dangerous.sh\\\\\"" "$HOME/.grok/hooks/multi-agent-coding.json"
+sl_cmd="$(jq -r '.statusLine.command' "$HOME/.claude/settings.json")"
+t_assert_eq "the statusLine command quotes its path" "bash \"$HOME/.claude/statusline-command.sh\"" "$sl_cmd"
+t_assert_eq "the statusLine command runs from a shell" "0" "$(printf '{}' | sh -c "$sl_cmd" >/dev/null 2>&1; echo $?)"
+rc="$(run_log "$LOGS/spaced-uninst.log" bash "$PKG/uninstall.sh" --yes --prefix "$SPACED")"
+t_assert_eq "uninstall with the spaced prefix exits 0" "0" "$rc"
+t_assert_eq "it removed the quoted hook entry" "0" \
+  "$(jq '[.hooks.PreToolUse // [] | .[].hooks[].command] | map(select(contains("block-dangerous"))) | length' "$HOME/.claude/settings.json")"
+t_assert_eq "it unset the quoted statusLine" "null" "$(jq -r '.statusLine' "$HOME/.claude/settings.json")"
+rc="$(run_log "$LOGS/restore-passthru.log" bash "$PKG/install.sh" --uninstall --restore-backups --yes --prefix "$SPACED")"
+t_assert_eq "install.sh --uninstall passes --restore-backups through (exit 0)" "0" "$rc"
+t_assert_eq "--restore-backups without --uninstall is a usage error" "2" "$(rc_of bash "$PKG/install.sh" --restore-backups --yes)"
 
 # ---------------------------------------------------------------- --uninstall takes no selection
 

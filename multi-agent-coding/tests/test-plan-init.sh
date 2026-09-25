@@ -64,8 +64,9 @@ t_assert_grep "the symlink resolves to the plan" "^# PLAN — lane-a$" "$WT/PLAN
 
 # --- Exclusions go in the COMMON .git so every worktree inherits them ---
 t_assert "the common exclude file exists" test -f "$EXCLUDE"
-t_assert_grep "PLAN.md is excluded" "^PLAN\.md$" "$EXCLUDE"
-t_assert_grep ".claude/plans/ is excluded" "^\.claude/plans/$" "$EXCLUDE"
+t_assert_grep "PLAN.md is excluded, anchored to the root" "^/PLAN\.md$" "$EXCLUDE"
+t_assert_grep ".claude/plans/ is excluded, anchored to the root" "^/\.claude/plans/$" "$EXCLUDE"
+t_assert_not_grep "no unanchored PLAN.md pattern (it would hide nested files)" "^PLAN\.md$" "$EXCLUDE"
 t_assert "the worktree is not git-dirty" \
   test -z "$(git -C "$WT" status --porcelain)"
 
@@ -78,7 +79,7 @@ bash -c "cd '$WT' && bash '$PLAN_INIT' lane-a" > "$OUT/second.txt" 2>&1
 t_assert_grep "second run says it kept the file" "^kept: " "$OUT/second.txt"
 t_assert_grep "second run reports the existing link" "^ok: " "$OUT/second.txt"
 t_assert_eq "second run does not duplicate the exclude entry" "1" \
-  "$(grep -c '^PLAN\.md$' "$EXCLUDE" | tr -d ' ')"
+  "$(grep -c '^/PLAN\.md$' "$EXCLUDE" | tr -d ' ')"
 
 # --- From the main checkout, and from a subdirectory of it ---
 t_assert "exits 0 in the main checkout" bash -c "cd '$MAIN' && bash '$PLAN_INIT' lane-b"

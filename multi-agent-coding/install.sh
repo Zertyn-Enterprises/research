@@ -36,7 +36,8 @@ Options:
                  e.g. --only rules,safety or --only 2
   --prefix DIR   install prefix, must be inside \$HOME
                  (default: \$MULTI_AGENT_CODING_HOME, else \$HOME/.multi-agent-coding)
-  --uninstall    hand over to uninstall.sh; every remaining argument is passed through
+  --uninstall    hand over to uninstall.sh; --dry-run, --yes, --prefix and
+                 --restore-backups are passed through (no level selection)
   --help, -h     this text
 
 Environment:
@@ -70,10 +71,15 @@ while [ $# -gt 0 ]; do
     --prefix)     shift; [ $# -gt 0 ] && [ -n "$1" ] || kit_usage_die "--prefix needs a non-empty directory"; KIT_PREFIX="$1"; add_passthru "--prefix=$1" ;;
     --prefix=*)   KIT_PREFIX="${1#--prefix=}"; [ -n "$KIT_PREFIX" ] || kit_usage_die "--prefix needs a non-empty directory"; add_passthru "$1" ;;
     --uninstall)  DO_UNINSTALL=1 ;;
+    --restore-backups) RESTORE_SEEN=1; add_passthru "$1" ;;
     *)            usage >&2; kit_usage_die "unknown option: $1" ;;
   esac
   shift
 done
+
+if [ "${RESTORE_SEEN:-0}" = "1" ] && [ "$DO_UNINSTALL" != "1" ]; then
+  kit_usage_die "--restore-backups only makes sense with --uninstall"
+fi
 
 if [ "$DO_UNINSTALL" = "1" ]; then
   # uninstall.sh removes whatever the manifest lists; it has no level selection, so
@@ -331,12 +337,14 @@ do_claude_quality() {
   kit_need_jq
   local want cur
   kit_install_file claude/statusline-command.sh "$KIT_CLAUDE_DIR/statusline-command.sh" 755
-  want="$KIT_CLAUDE_DIR/statusline-command.sh"
+  # Quoted: the command runs through a shell, and $HOME may contain spaces.
+  want="bash \"$KIT_CLAUDE_DIR/statusline-command.sh\""
   cur=""
   if [ -f "$KIT_SETTINGS" ]; then
     cur="$(jq -r '.statusLine.command // ""' "$KIT_SETTINGS" 2>/dev/null || printf '')"
   fi
-  if [ -z "$cur" ] || [ "$cur" = "$want" ] || [ "$cur" = "bash $want" ]; then
+  if [ -z "$cur" ] || [ "$cur" = "$want" ] \
+     || [ "$cur" = "$KIT_CLAUDE_DIR/statusline-command.sh" ] || [ "$cur" = "bash $KIT_CLAUDE_DIR/statusline-command.sh" ]; then
     kit_json_apply "$KIT_SETTINGS" --arg cmd "$want" \
       '.statusLine = {type: "command", command: $cmd, padding: 0}'
     kit_json_note "$KIT_SETTINGS" ".statusLine"

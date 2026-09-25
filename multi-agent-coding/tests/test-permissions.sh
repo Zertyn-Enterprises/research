@@ -29,6 +29,8 @@ t_assert_not_grep "no reference to a private rules directory" "$PRIVATE_DIR" "$F
 
 t_assert_grep "asks before editing .env files" '"Edit\(\.env\)"' "$F"
 t_assert_grep "denies reading .env files" '"Read\(\.env\)"' "$F"
+t_assert_not_grep "does not deny .env.* wholesale (the rules tell agents to read .env.example)" '"Read\((\*\*/)?\.env\.\*\)"' "$F"
+t_assert_grep "denies reading .env.local" '"Read\(\.env\.local\)"' "$F"
 t_assert_grep "denies the Linux root wipe" '"Bash\(sudo rm -[rf]+ /\*\)"' "$F"
 t_assert_grep "denies filesystem creation" '"Bash\(mkfs\*\)"' "$F"
 t_assert_grep "denies the Linux power command" '"Bash\(systemctl poweroff\*\)"' "$F"

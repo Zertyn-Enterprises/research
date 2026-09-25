@@ -83,6 +83,10 @@ sudo git push origin main
 FOO=1 git push origin main
 cd /tmp/repo && git push origin main
 /usr/bin/git push origin main
+(git push origin main)
+{ git push origin main; }
+(cd /tmp/repo && git push origin main)
+(shutdown -h now)
 git push origin main
 git push origin HEAD:main
 git push upstream main

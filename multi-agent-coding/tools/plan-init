@@ -109,7 +109,9 @@ mkdir -p "$common/info"
 if [ -s "$exclude_file" ] && [ "$(tail -c 1 "$exclude_file" | wc -l | tr -d ' ')" = "0" ]; then
   printf '\n' >> "$exclude_file"
 fi
-for pat in 'PLAN.md' '.claude/plans/'; do
+# Anchored to the repository root: an unanchored `PLAN.md` would hide every file of
+# that name at any depth, in every worktree.
+for pat in '/PLAN.md' '/.claude/plans/'; do
   if grep -Fqx -- "$pat" "$exclude_file"; then
     continue
   fi

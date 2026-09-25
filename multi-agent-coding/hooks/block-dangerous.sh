@@ -102,7 +102,8 @@ fi
 if [ -n "$PROT_RE" ]; then
   UNQUOTED=$(printf '%s' "$STRIPPED" | sed -e "s/'//g" -e 's/"//g')
   while IFS= read -r pseg; do
-    pseg="${pseg#"${pseg%%[![:space:]]*}"}"
+    # ltrim spaces and the subshell/group openers `(` `{`, so `(git push …)` is a git
+    pseg=$(printf '%s' "$pseg" | sed -E 's/^[[:space:]({]+//')
     [ -z "$pseg" ] && continue
     while :; do   # same wrapper / env-assignment stripping as the argv-head loop below
       ptok="${pseg%%[[:space:]]*}"
@@ -117,8 +118,8 @@ if [ -n "$PROT_RE" ]; then
     printf '%s' "$pseg" | grep -qE '^[^[:space:]]*git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?([[:space:]]+-[^[:space:]]+)*[[:space:]]+push([[:space:]]|$)' || continue
     # a protected branch in ANY form: as branch, as refspec destination (`HEAD:main`,
     # `HEAD:refs/heads/main`), any remote.
-    if printf '%s' "$pseg" | grep -qE '[[:space:]]push.*[[:space:]:]('"$PROT_RE"')([[:space:]]|$)' \
-       || printf '%s' "$pseg" | grep -qE '[[:space:]]push.*refs/(heads|remotes/[^/[:space:]]+)/('"$PROT_RE"')([[:space:]]|$)'; then
+    if printf '%s' "$pseg" | grep -qE '[[:space:]]push.*[[:space:]:]('"$PROT_RE"')([[:space:]]|$|[)}])' \
+       || printf '%s' "$pseg" | grep -qE '[[:space:]]push.*refs/(heads|remotes/[^/[:space:]]+)/('"$PROT_RE"')([[:space:]]|$|[)}])'; then
       block "push to a protected branch ($PROTECTED_BRANCHES), any remote or refspec form — it moves by PR only (Git & Safety §3)"
     fi
     # bare `git push` (no explicit target): dangerous only when the branch IS protected
@@ -166,7 +167,7 @@ fi
 # tr, not sed: a newline in a sed replacement is not portable across BSD/GNU.
 SEGS=$(printf '%s\n' "$ANALYZED" | tr '|;&' '\n\n\n')
 while IFS= read -r seg; do
-  seg="${seg#"${seg%%[![:space:]]*}"}"          # ltrim
+  seg=$(printf '%s' "$seg" | sed -E 's/^[[:space:]({]+//')   # ltrim, incl. `(` and `{` openers
   [ -z "$seg" ] && continue
   # strip wrappers and env-assignment prefixes to reach the real head — judged
   # on the FIRST TOKEN only, so 'dd if=…' is never read as VAR=value

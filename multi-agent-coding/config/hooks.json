@@ -5,7 +5,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "bash @PREFIX@/hooks/block-dangerous.sh",
+          "command": "bash \"@PREFIX@/hooks/block-dangerous.sh\"",
           "timeout": 10
         }
       ]

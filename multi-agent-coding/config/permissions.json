@@ -7,9 +7,17 @@
     "Bash(systemctl poweroff*)",
     "Read(~/.ssh/**)",
     "Read(.env)",
-    "Read(.env.*)",
     "Read(**/.env)",
-    "Read(**/.env.*)"
+    "Read(.env.local)",
+    "Read(**/.env.local)",
+    "Read(.env.*.local)",
+    "Read(**/.env.*.local)",
+    "Read(.env.production)",
+    "Read(**/.env.production)",
+    "Read(.env.staging)",
+    "Read(**/.env.staging)",
+    "Read(.env.development)",
+    "Read(**/.env.development)"
   ],
   "ask": [
     "Bash(git push origin main)",

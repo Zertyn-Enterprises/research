@@ -229,7 +229,7 @@ while IFS= read -r p; do
   if [ ! -f "$p" ]; then kit_info "already gone: $p"; continue; fi
   cur="$(jq -r '.statusLine.command // ""' "$p" 2>/dev/null || printf '\n')"
   case "$cur" in
-    "$KIT_CLAUDE_DIR/statusline-command.sh"|"bash $KIT_CLAUDE_DIR/statusline-command.sh"|"$KIT_PREFIX"/*)
+    "$KIT_CLAUDE_DIR/statusline-command.sh"|"bash $KIT_CLAUDE_DIR/statusline-command.sh"|"bash \"$KIT_CLAUDE_DIR/statusline-command.sh\""|"$KIT_PREFIX"/*)
       kit_json_apply "$p" 'del(.statusLine)'
       if [ "$KIT_DRY_RUN" = "1" ]; then kit_say "would unset .statusLine in $p"
       else kit_say "unset .statusLine in $p"; fi
