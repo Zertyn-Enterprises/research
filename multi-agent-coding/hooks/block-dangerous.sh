@@ -109,7 +109,7 @@ if [ -n "$PROT_RE" ]; then
       ptok="${pseg%%[[:space:]]*}"
       [ "$ptok" = "$pseg" ] && break
       case "$ptok" in
-        sudo|command|nohup|time|exec|env|-*|*=*) pseg="${pseg#* }"; pseg="${pseg#"${pseg%%[![:space:]]*}"}" ;;
+        sudo|command|nohup|time|exec|env|-*|*=*) pseg="${pseg#"$ptok"}"; pseg="${pseg#"${pseg%%[![:space:]]*}"}" ;;
         *) break ;;
       esac
     done
@@ -142,11 +142,13 @@ $(printf '%s\n' "$UNQUOTED" | tr '|;&' '\n\n\n')
 EOF
 fi
 
-# SQL rides inside quotes (psql -c '…'), so these two run on the RAW command.
-if printf '%s' "$COMMAND" | grep -qiE '\bdrop[[:space:]]+(table|database|schema)\b'; then
+# SQL rides inside quotes (psql -c '…'), so these two run with quotes intact — but
+# with heredoc bodies removed: writing a migration FILE (`cat > x.sql <<EOF`) is the
+# thing the message asks for, not the thing it blocks.
+if printf '%s' "$STRIPPED" | grep -qiE '\bdrop[[:space:]]+(table|database|schema)\b'; then
   block "destructive database operation — commit a migration file instead (Git & Safety §7)"
 fi
-if printf '%s' "$COMMAND" | grep -qiE '\bdelete[[:space:]]+from\b[^|;&]*\bwhere[[:space:]]+1\b'; then
+if printf '%s' "$STRIPPED" | grep -qiE '\bdelete[[:space:]]+from\b[^|;&]*\bwhere[[:space:]]+1\b'; then
   block "mass data deletion — commit a migration file instead (Git & Safety §7)"
 fi
 
@@ -175,9 +177,8 @@ while IFS= read -r seg; do
     head_tok="${seg%%[[:space:]]*}"
     [ "$head_tok" = "$seg" ] && break
     case "$head_tok" in
-      sudo|command|nohup|time|exec|env) seg="${seg#* }"; seg="${seg#"${seg%%[![:space:]]*}"}" ;;
-      -*)                               seg="${seg#* }"; seg="${seg#"${seg%%[![:space:]]*}"}" ;;
-      *=*)                              seg="${seg#* }"; seg="${seg#"${seg%%[![:space:]]*}"}" ;;
+      # drop the token itself (not "up to the first space": the separator may be a tab)
+      sudo|command|nohup|time|exec|env|-*|*=*) seg="${seg#"$head_tok"}"; seg="${seg#"${seg%%[![:space:]]*}"}" ;;
       *) break ;;
     esac
     # NOTE: sudo with flag-args (sudo -u root <cmd>) can still hide the head;

@@ -171,7 +171,13 @@ kit_install_file() { # kit_install_file <package-relative-src> <dest> [mode]
   if [ "$KIT_LINK" = "1" ]; then kit_install_link "$rel" "$dest"; return 0; fi
   if [ -f "$dest" ] && [ ! -L "$dest" ] && cmp -s "$src" "$dest"; then
     kit_manifest_add file "$dest"
-    kit_info "unchanged $dest"
+    # Same content, but a lost exec bit would make a hook or tool silently dead.
+    if [ -n "$mode" ] && [ ! -x "$dest" ]; then
+      if [ "$KIT_DRY_RUN" = "1" ]; then kit_say "would restore mode $mode on $dest"
+      else chmod "$mode" "$dest"; kit_say "restored mode $mode on $dest"; fi
+    else
+      kit_info "unchanged $dest"
+    fi
     return 0
   fi
   kit_backup "$dest"

@@ -413,6 +413,26 @@ rc="$(run_log "$LOGS/restore-passthru.log" bash "$PKG/install.sh" --uninstall --
 t_assert_eq "install.sh --uninstall passes --restore-backups through (exit 0)" "0" "$rc"
 t_assert_eq "--restore-backups without --uninstall is a usage error" "2" "$(rc_of bash "$PKG/install.sh" --restore-backups --yes)"
 
+# ---------------------------------------------------------------- lost exec bit is restored
+
+new_home execbit .claude
+bash "$PKG/install.sh" --yes --only safety > "$LOGS/execbit-1.log" 2>&1
+chmod 644 "$HOME/.multi-agent-coding/hooks/block-dangerous.sh"
+rc="$(run_log "$LOGS/execbit-2.log" bash "$PKG/install.sh" --yes --only safety)"
+t_assert_eq "reinstall over a hook that lost its exec bit exits 0" "0" "$rc"
+t_assert "the exec bit is back" test -x "$HOME/.multi-agent-coding/hooks/block-dangerous.sh"
+t_assert_grep "it says it restored the mode" "restored mode 755" "$LOGS/execbit-2.log"
+
+# ---------------------------------------------------------------- Codex cap: a same-named key inside a [table] is not the root key
+
+new_home codex-table .claude .codex
+printf '[tui]\nproject_doc_max_bytes = 4096\ntheme = "dark"\n' > "$HOME/.codex/config.toml"
+bash "$PKG/install.sh" --yes --only rules > "$LOGS/codex-table.log" 2>&1
+t_assert_eq "the root key is prepended" "project_doc_max_bytes = 131072" "$(head -1 "$HOME/.codex/config.toml")"
+t_assert_grep "the [tui] table keeps its own key untouched" "^project_doc_max_bytes = 4096$" "$HOME/.codex/config.toml"
+t_assert_grep "the [tui] table is intact" '^theme = "dark"$' "$HOME/.codex/config.toml"
+t_assert_eq "exactly one root-table key" "1" "$(awk '/^[[:space:]]*\[/ { exit } /^project_doc_max_bytes/ { n++ } END { print n+0 }' "$HOME/.codex/config.toml")"
+
 # ---------------------------------------------------------------- --uninstall takes no selection
 
 new_home uninst-guard .claude

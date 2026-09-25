@@ -59,6 +59,11 @@ This is the most important limitation on the page.
   `git config --global`, …). Claude Code enforces them, and Grok Build reads the
   same file through its compatibility layer; Codex does not read Claude
   permissions, so on Codex those commands are guarded only by the rules text.
+- **`rm -rf /*` and `rm -rf ~*` are `ask` rules, not `deny`, on purpose.** A
+  permission rule is a prefix match: `Bash(rm -rf /*)` also matches
+  `rm -rf /tmp/build`, and `Bash(rm -rf ~*)` matches `rm -rf ~/proj/dist`. Denying
+  them would make ordinary cleanup impossible, so they prompt, and the hook is the
+  layer that hard-blocks the exact `/` and home forms.
 - **It fails open on input it cannot read.** A payload with no command (an empty
   or malformed stdin, or a CLI whose payload shape we do not parse) is allowed.
   Blocking blind would break every CLI we have not tested.

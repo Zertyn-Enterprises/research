@@ -150,6 +150,20 @@ cat .env.example
 claude --model opus --tools "" -p "review"
 CASES
 
+echo "-- tabs between wrapper and command --"
+t_assert_eq "blocks: sudo<TAB>shutdown -h now" 2 "$(run_hook "$(printf 'sudo\tshutdown -h now')")"
+t_assert_eq "blocks: FOO=1<TAB>mkfs.ext4 /dev/sda1" 2 "$(run_hook "$(printf 'FOO=1\tmkfs.ext4 /dev/sda1')")"
+t_assert_eq "allows and terminates: env<TAB>FOO=1" 0 "$(run_hook "$(printf 'env\tFOO=1')")"
+t_assert_eq "blocks: sudo<TAB>git push origin main" 2 "$(run_hook "$(printf 'sudo\tgit push origin main')")"
+
+echo "-- writing a migration file is allowed; running destructive SQL is not --"
+t_assert_eq "allows: heredoc that writes DROP TABLE into a migration file" 0 "$(run_hook 'cat > migrations/002_drop_legacy.sql <<EOF
+DROP TABLE legacy_events;
+DELETE FROM audit WHERE 1=1;
+EOF')"
+t_assert_eq "blocks: psql -c with DROP TABLE (quoted, no heredoc)" 2 "$(run_hook "psql -c 'DROP TABLE users'")"
+t_assert_eq "blocks: mysql -e with DELETE FROM WHERE 1" 2 "$(run_hook 'mysql -e "DELETE FROM users WHERE 1=1"')"
+
 echo "-- heredoc bodies are data, not commands --"
 t_assert_eq "allows: heredoc containing 'shutdown'" 0 "$(run_hook 'cat <<EOF > notes.txt
 that host used to shutdown nightly
@@ -162,9 +176,24 @@ t_assert_eq "blocks a protected push in the Grok payload spelling" 2 "$(run_hook
 t_assert_eq "allows a benign command in the Grok payload spelling" 0 "$(run_hook_grok 'npm test')"
 
 echo "-- jq is optional (sed fallback) --"
+# A stub PATH with everything the hook needs except jq, so the fallback runs on
+# every CI leg (a plain /usr/bin:/bin still has jq on ubuntu).
+STUB="$TMP_HOME/stub-bin"
+mkdir -p "$STUB"
+for b in bash sh sed awk grep tr cat printf head git env; do
+  p="$(command -v "$b" 2>/dev/null || true)"
+  [ -n "$p" ] && ln -sf "$p" "$STUB/$b"
+done
+t_assert_fail "the stub PATH really hides jq" env -i "PATH=$STUB" "$STUB/bash" -c 'command -v jq'
 printf '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' \
-  | env PATH=/usr/bin:/bin bash "$HOOK" >/dev/null 2>&1
-t_assert_eq "blocks with a PATH that may not contain jq" 2 "$?"
+  | env -i "PATH=$STUB" "$STUB/bash" "$HOOK" >/dev/null 2>&1
+t_assert_eq "blocks without jq (sed fallback)" 2 "$?"
+printf '{"toolName":"run_terminal_command","toolInput":{"command":"git push origin main"}}' \
+  | env -i "PATH=$STUB" "$STUB/bash" "$HOOK" >/dev/null 2>&1
+t_assert_eq "blocks a Grok payload without jq (sed fallback)" 2 "$?"
+printf '{"tool_name":"Bash","tool_input":{"command":"npm test"}}' \
+  | env -i "PATH=$STUB" "$STUB/bash" "$HOOK" >/dev/null 2>&1
+t_assert_eq "allows a benign command without jq" 0 "$?"
 
 echo "-- MAC_PROTECTED_BRANCHES --"
 t_assert_eq "MAC_PROTECTED_BRANCHES=release blocks push to release" 2 \
