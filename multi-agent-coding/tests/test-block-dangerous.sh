@@ -100,6 +100,17 @@ head -5 ~/.ssh/config
 cat "/home/dev/.ssh/id_rsa"
 cat /etc/shadow
 echo SECRET=1 > .env
+echo SECRET=1 >.env
+echo SECRET=1 >> .env.local
+printf 'K=v\n' | tee .env
+cp creds.txt .env
+mv .env.staging .env
+$(git push origin main)
+`git push origin main`
+sh -c "git push origin main"
+bash -c 'psql -c "DROP TABLE users"'
+$(psql -c 'DROP TABLE users')
+/bin/sh -c "git push origin master"
 CASES
 
 echo "-- must ALLOW (rc=0) --"
@@ -147,6 +158,14 @@ diskutil list
 chmod 755 script.sh
 chmod -R 755 dist/
 cat .env.example
+echo "API_KEY=" > .env.example
+tee .env.example < template.txt
+cp .env.example .env.sample
+cat .env.local
+grep -c = .env
+sh -c "git status"
+bash -c 'npm test'
+git commit -m "fix: handle > .env redirects in the docs"
 claude --model opus --tools "" -p "review"
 CASES
 

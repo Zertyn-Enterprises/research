@@ -63,6 +63,10 @@ kit_init() { # resolve the install prefix and the per-CLI directories
     "$HOME"/*) : ;;
     *) kit_die "the install prefix must live inside HOME, got: $KIT_PREFIX" ;;
   esac
+  # A prefix match is not containment: "$HOME/../elsewhere" starts with $HOME too.
+  case "/$KIT_PREFIX/" in
+    */../*|*/./*) kit_die "the install prefix must not contain '..' or '.' components, got: $KIT_PREFIX" ;;
+  esac
   KIT_CLAUDE_DIR="$HOME/.claude"
   KIT_CLAUDE_DIR_SOURCE="default"
   if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
@@ -101,8 +105,11 @@ kit_cli_state() { # kit_cli_state <binary> <config-dir> -> one human readable li
 
 kit_assert_in_home() {
   case "$1" in
-    "$HOME"/*) return 0 ;;
+    "$HOME"/*) : ;;
     *) kit_die "refusing to write outside HOME: $1" ;;
+  esac
+  case "/$1/" in
+    */../*) kit_die "refusing a path with '..' (it could leave HOME): $1" ;;
   esac
 }
 

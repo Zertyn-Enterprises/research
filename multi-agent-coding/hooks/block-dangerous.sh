@@ -70,15 +70,23 @@ rm_root_delete() { # <text> → 0 when an rm with recursive+force flags targets 
     && printf '%s' "$m" | grep -qE '(^|[[:space:]])(-[[:alnum:]]*[fF][[:alnum:]]*|--force)([[:space:]]|$)'
 }
 
-seg_head_strip() { # <segment> → the segment with `(`/`{` openers, wrappers and VAR=value prefixes removed
-  local s t
-  s=$(printf '%s' "$1" | sed -E 's/^[[:space:]({]+//')
+seg_head_strip() { # <segment> → the segment with `(` `{` `$(` backtick openers, wrappers, `sh -c` and VAR=value prefixes removed
+  local s t rest
+  s=$(printf '%s' "$1" | sed -E 's/^[[:space:]({$`]+//')
   while :; do
     t="${s%%[[:space:]]*}"
     [ "$t" = "$s" ] && break
     case "$t" in
       # drop the token itself (not "up to the first space": the separator may be a tab)
       sudo|command|nohup|time|exec|env|-*|*=*) s="${s#"$t"}"; s="${s#"${s%%[![:space:]]*}"}" ;;
+      # `sh -c <cmd>`: the real head is what follows -c (quotes were removed upstream)
+      sh|bash|zsh|dash|ksh|*/sh|*/bash|*/zsh|*/dash|*/ksh)
+        rest="${s#"$t"}"; rest="${rest#"${rest%%[![:space:]]*}"}"
+        case "$rest" in
+          -*c" "*|-*c"	"*) rest="${rest#-*c}"; s="${rest#"${rest%%[![:space:]]*}"}" ;;
+          -*c) s="" ;;
+          *) break ;;
+        esac ;;
       *) break ;;
     esac
     # NOTE: sudo with flag-args (sudo -u root <cmd>) can still hide the head;
@@ -132,8 +140,8 @@ if [ -n "$PROT_RE" ]; then
     printf '%s' "$pseg" | grep -qE '^[^[:space:]]*git([[:space:]]+-C[[:space:]]+[^[:space:]]+)?([[:space:]]+-[^[:space:]]+)*[[:space:]]+push([[:space:]]|$)' || continue
     # a protected branch in ANY form: as branch, as refspec destination (`HEAD:main`,
     # `HEAD:refs/heads/main`), any remote.
-    if printf '%s' "$pseg" | grep -qE '[[:space:]]push.*[[:space:]:]('"$PROT_RE"')([[:space:]]|$|[)}])' \
-       || printf '%s' "$pseg" | grep -qE '[[:space:]]push.*refs/(heads|remotes/[^/[:space:]]+)/('"$PROT_RE"')([[:space:]]|$|[)}])'; then
+    if printf '%s' "$pseg" | grep -qE '[[:space:]]push.*[[:space:]:]('"$PROT_RE"')([[:space:]]|$|[)}`])' \
+       || printf '%s' "$pseg" | grep -qE '[[:space:]]push.*refs/(heads|remotes/[^/[:space:]]+)/('"$PROT_RE"')([[:space:]]|$|[)}`])'; then
       block "push to a protected branch ($PROTECTED_BRANCHES), any remote or refspec form — it moves by PR only (Git & Safety §3)"
     fi
     # bare `git push` (no explicit target): dangerous only when the branch IS protected
@@ -178,10 +186,31 @@ done <<EOF
 $(printf '%s\n' "$UNQUOTED" | tr '|;&' '\n\n\n')
 EOF
 
-case "$ANALYZED" in
-  *"> .env"*|*">> .env"*|*"> .env."*|*">> .env."*)
-    block "direct write to a .env file — use the platform's env vars (Git & Safety §1)" ;;
-esac
+# ── Writes to a real env file: redirection (with or without a space), tee, cp, mv.
+#    `.env.example` / `.env.sample` / `.env.template` are documentation and stay open.
+ENV_FILE='(\./)?\.env(\.[A-Za-z0-9_.-]+)?'
+ENV_DOC='\.env\.(example|sample|template)([[:space:]]|$)'
+env_target_hit() { # <text> → 0 when it names a real env file as a write target
+  printf '%s' "$1" | grep -qE "$2" && ! printf '%s' "$1" | grep -qE "$ENV_DOC"
+}
+# Judged on the quote-blanked text: an unquoted `> .env` is a redirection, while a
+# commit message that says "> .env" is a string.
+if env_target_hit "$ANALYZED" ">>?[[:space:]]*${ENV_FILE}([[:space:]]|$)"; then
+  block "direct write to a .env file — use the platform's env vars (Git & Safety §1)"
+fi
+while IFS= read -r eseg; do
+  eseg=$(seg_head_strip "$eseg")
+  [ -z "$eseg" ] && continue
+  etok="${eseg%%[[:space:]]*}"
+  case "${etok##*/}" in
+    tee|cp|mv|install)
+      if env_target_hit "$eseg" "[[:space:]]${ENV_FILE}([[:space:]]|$)"; then
+        block "direct write to a .env file — use the platform's env vars (Git & Safety §1)"
+      fi ;;
+  esac
+done <<EOF
+$(printf '%s\n' "$ANALYZED" | tr '|;&' '\n\n\n')
+EOF
 
 if printf '%s' "$ANALYZED" | grep -qE '(^|[|;&[:space:]])(cat|head|tail|less|more|bat|base64|strings|xxd|cp|scp)[[:space:]][^|;&]*(\.ssh/|/etc/shadow)'; then
   block "reading SSH keys or system credential files (Git & Safety §1)"

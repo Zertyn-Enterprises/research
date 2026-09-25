@@ -389,6 +389,15 @@ t_assert_eq "the hook command carries the prefix verbatim, quoted" "bash \"$WEIR
   "$(jq -r '.hooks.PreToolUse[].hooks[].command' "$HOME/.claude/settings.json" | head -1)"
 t_assert_eq "install rejects an empty --prefix with exit 2" "2" "$(rc_of bash "$PKG/install.sh" --prefix "" --yes)"
 
+# ---------------------------------------------------------------- a prefix that escapes HOME through ..
+
+new_home escape .claude
+rc="$(run_log "$LOGS/escape.log" bash "$PKG/install.sh" --yes --only plan --prefix "$HOME/../escaped-prefix")"
+t_assert_eq "install refuses a prefix with .. (exit 1)" "1" "$rc"
+t_assert_grep "it says why" "must not contain" "$LOGS/escape.log"
+t_assert_eq "nothing was written outside HOME" "1" "$(rc_of test -e "$HOME/../escaped-prefix")"
+t_assert_eq "doctor refuses the same prefix" "1" "$(rc_of bash "$PKG/doctor.sh" --prefix "$HOME/../escaped-prefix")"
+
 # ---------------------------------------------------------------- a prefix with spaces
 
 new_home space-prefix .claude .codex .grok
