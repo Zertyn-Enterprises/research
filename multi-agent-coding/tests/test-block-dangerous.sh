@@ -53,6 +53,16 @@ git push origin 'master'
 git push origin HEAD:refs/heads/main
 git push origin refs/heads/main
 git push -f origin "HEAD:main"
+echo hi; mkfs.ext4 /dev/sda1
+true && shutdown -h now
+ls | tccutil reset All
+echo start || reboot
+sh -c "rm -rf /"
+bash -c 'rm -rf ~'
+`rm -rf /`
+$(rm -rf $HOME)
+chmod -R 0777 /
+chmod -R 0777 .
 chmod -R 777 /
 chmod -R 777 .
 mkfs.ext4 /dev/sda1
@@ -98,6 +108,10 @@ git push origin HEAD:refs/heads/feat/main-menu
 rm -r build
 rm --recursive dist
 rm -rf -- ./out
+echo "rm -rf / is what we must never run"
+git commit -m "chmod -R 0777 was the bug; reboot the discussion"
+sh -c "rm -rf ./tmp/cache"
+chmod -R 0755 dist/
 rm -rf node_modules
 rm -rf ./dist
 rm -rf /tmp/build

@@ -58,6 +58,8 @@ PKG="$(cd "$PKG" && pwd)"   # normalise: mktemp can hand back a doubled slash
 
 t_assert "doctor --help exits 0" bash "$PKG/doctor.sh" --help
 t_assert_eq "doctor rejects an unknown flag with exit 2" "2" "$(rc_of bash "$PKG/doctor.sh" --nope)"
+t_assert_eq "doctor rejects an empty --prefix with exit 2" "2" "$(rc_of bash "$PKG/doctor.sh" --prefix "")"
+t_assert_eq "doctor rejects --prefix= with exit 2" "2" "$(rc_of bash "$PKG/doctor.sh" --prefix=)"
 bash "$PKG/doctor.sh" --help > "$LOGS/help.log" 2>&1
 t_assert_grep "the help says it writes nothing" "Writes nothing, ever" "$LOGS/help.log"
 t_assert_grep "the help documents --prefix" "^  --prefix DIR" "$LOGS/help.log"

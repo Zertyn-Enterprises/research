@@ -376,6 +376,16 @@ t_assert_grep "it says what it restored" "restored $HOME/.claude/rules/core.md" 
 t_assert_grep "it put the original Codex cap back" "^project_doc_max_bytes = 4096$" "$HOME/.codex/config.toml"
 t_assert_grep "the restored config.toml keeps its other keys" '^model = "keep-me"$' "$HOME/.codex/config.toml"
 
+# ---------------------------------------------------------------- a prefix with sed metacharacters
+
+new_home weird-prefix .claude
+WEIRD="$HOME/pre&fix|x"
+rc="$(run_log "$LOGS/weird.log" bash "$PKG/install.sh" --yes --only safety --prefix "$WEIRD")"
+t_assert_eq "install with a prefix containing & and | exits 0" "0" "$rc"
+t_assert_eq "the hook command carries the prefix verbatim" "bash $WEIRD/hooks/block-dangerous.sh" \
+  "$(jq -r '.hooks.PreToolUse[].hooks[].command' "$HOME/.claude/settings.json" | head -1)"
+t_assert_eq "install rejects an empty --prefix with exit 2" "2" "$(rc_of bash "$PKG/install.sh" --prefix "" --yes)"
+
 # ---------------------------------------------------------------- --uninstall takes no selection
 
 new_home uninst-guard .claude

@@ -67,8 +67,8 @@ while [ $# -gt 0 ]; do
     --level=*)    LEVEL_MAX="${1#--level=}" ;;
     --only)       shift; [ $# -gt 0 ] || kit_usage_die "--only needs a level list"; ONLY="$1" ;;
     --only=*)     ONLY="${1#--only=}" ;;
-    --prefix)     shift; [ $# -gt 0 ] || kit_usage_die "--prefix needs a directory"; KIT_PREFIX="$1"; add_passthru "--prefix=$1" ;;
-    --prefix=*)   KIT_PREFIX="${1#--prefix=}"; add_passthru "$1" ;;
+    --prefix)     shift; [ $# -gt 0 ] && [ -n "$1" ] || kit_usage_die "--prefix needs a non-empty directory"; KIT_PREFIX="$1"; add_passthru "--prefix=$1" ;;
+    --prefix=*)   KIT_PREFIX="${1#--prefix=}"; [ -n "$KIT_PREFIX" ] || kit_usage_die "--prefix needs a non-empty directory"; add_passthru "$1" ;;
     --uninstall)  DO_UNINSTALL=1 ;;
     *)            usage >&2; kit_usage_die "unknown option: $1" ;;
   esac

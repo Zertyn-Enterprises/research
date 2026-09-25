@@ -62,7 +62,10 @@ done
 RM_TARGET='["'"'"']?(/|~|~/|\$HOME|\$HOME/|\$\{HOME\}|\$\{HOME\}/)(\*|/\*)?["'"'"']?'
 rm_root_delete() { # <text> → 0 when an rm with recursive+force flags targets / or the home dir
   local m
-  m=$(printf '%s' "$1" | grep -oE "(^|[[:space:];&|(])rm([[:space:]]+-[^[:space:]]+)+[[:space:]]+${RM_TARGET}([[:space:]]|\$|[;&|)])") || return 1
+  # Wrappers count: `sh -c "rm -rf /"`, `` `rm -rf /` `` and `$(rm -rf /)` are the
+  # same command. A quote is a delimiter only right after `-c`, so a quoted
+  # sentence that merely mentions the command (`echo "rm -rf / is bad"`) is data.
+  m=$(printf '%s' "$1" | grep -oE "(^|[[:space:];&|(\`]|-c[[:space:]]+[\"'])rm([[:space:]]+-[^[:space:]]+)+[[:space:]]+${RM_TARGET}([[:space:]]|\$|[;&|)\`])") || return 1
   printf '%s' "$m" | grep -qE '(^|[[:space:]])(-[[:alnum:]]*[rR][[:alnum:]]*|--recursive)([[:space:]]|$)' \
     && printf '%s' "$m" | grep -qE '(^|[[:space:]])(-[[:alnum:]]*[fF][[:alnum:]]*|--force)([[:space:]]|$)'
 }
@@ -139,7 +142,8 @@ if printf '%s' "$COMMAND" | grep -qE '(^|[|;&[:space:]])(cat|head|tail|less|more
 fi
 
 # ── Per-segment argv-head checks ──
-SEGS=$(printf '%s\n' "$ANALYZED" | sed -E 's/[|;&]+/\n/g')
+# tr, not sed: a newline in a sed replacement is not portable across BSD/GNU.
+SEGS=$(printf '%s\n' "$ANALYZED" | tr '|;&' '\n\n\n')
 while IFS= read -r seg; do
   seg="${seg#"${seg%%[![:space:]]*}"}"          # ltrim
   [ -z "$seg" ] && continue
@@ -181,7 +185,7 @@ while IFS= read -r seg; do
         block "recursive force delete of / or ~ (Git & Safety §2)"
       fi ;;
     chmod)
-      if printf '%s' "$seg" | grep -qE '(-R|--recursive)' && printf '%s' "$seg" | grep -qE '[[:space:]]777([[:space:]]|$)'; then
+      if printf '%s' "$seg" | grep -qE '(-R|--recursive)' && printf '%s' "$seg" | grep -qE '[[:space:]]0?777([[:space:]]|$)'; then
         block "chmod -R 777 (Git & Safety §2)"
       fi ;;
   esac

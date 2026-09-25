@@ -31,16 +31,6 @@ kit_usage_die() { kit_err "$*"; exit 2; }
 
 kit_ts() { date +%Y%m%d-%H%M%S; }
 
-kit_sha256() { # kit_sha256 <file> -> hex digest on stdout
-  if command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$1" | awk '{print $1}'
-  elif command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
-  else
-    kit_die "no sha256 tool found (need shasum or sha256sum)"
-  fi
-}
-
 kit_have() { command -v "$1" >/dev/null 2>&1; }
 
 # ---------------------------------------------------------------- environment
@@ -342,8 +332,10 @@ kit_fragment() { # kit_fragment <package-relative-json> — read it and substitu
   local rel="$1" src="$KIT_ROOT/$1" out
   [ -f "$src" ] || kit_die "missing package file: $rel (expected $src)"
   kit_need_jq
-  out="$(sed -e "s|@PREFIX@|$KIT_PREFIX|g" "$src")"
-  printf '%s' "$out" | jq -e . >/dev/null 2>&1 || kit_die "$rel is not valid JSON"
+  # Substitute with jq, not sed: a prefix containing `&`, `|`, `"` or `\` is a legal
+  # $HOME and must land in the JSON verbatim, escaped as JSON, not as a sed pattern.
+  out="$(jq -e --arg p "$KIT_PREFIX" '(.. | strings) |= gsub("@PREFIX@"; $p)' "$src" 2>/dev/null)" \
+    || kit_die "$rel is not valid JSON"
   printf '%s' "$out"
 }
 
@@ -427,14 +419,17 @@ kit_git_hooks_path() { # kit_git_hooks_path <dir>
 
 # ---------------------------------------------------------------- doctor report
 
-kit_doctor_dep() { # kit_doctor_dep <binary> <required|optional> [note]
+kit_doctor_dep() { # kit_doctor_dep <binary> <required|levels|optional> [note]
   local b="$1" kind="$2" note="${3:-}"
   if kit_have "$b"; then
     kit_info "$b: $(command -v "$b")"
     return 0
   fi
-  if [ "$kind" = "required" ]; then kit_info "$b: MISSING (required) $note"
-  else kit_info "$b: not installed (optional) $note"; fi
+  case "$kind" in
+    required) kit_info "$b: MISSING (required) $note" ;;
+    levels)   kit_info "$b: not installed — install.sh refuses the levels that need it $note" ;;
+    *)        kit_info "$b: not installed (optional) $note" ;;
+  esac
   return 1
 }
 
@@ -474,7 +469,7 @@ kit_doctor_report() { # read-only; returns 1 when a hard dependency is missing
   kit_say ""
   kit_say "dependencies"
   kit_doctor_dep git required || rc=1
-  kit_doctor_dep jq required "— needed by level 2 (safety) and level 3 (claude-quality)" || true
+  kit_doctor_dep jq levels "(level 2 safety, level 3 claude-quality)" || true
   kit_doctor_dep gitleaks optional "— the pre-commit hook warns and passes without it" || true
   kit_doctor_dep python3 optional || true
   kit_say ""

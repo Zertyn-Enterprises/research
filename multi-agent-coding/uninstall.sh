@@ -55,8 +55,8 @@ while [ $# -gt 0 ]; do
     --dry-run)          KIT_DRY_RUN=1 ;;
     --yes|-y)           ASSUME_YES=1 ;;
     --restore-backups)  RESTORE=1 ;;
-    --prefix)           shift; [ $# -gt 0 ] || kit_usage_die "--prefix needs a directory"; KIT_PREFIX="$1" ;;
-    --prefix=*)         KIT_PREFIX="${1#--prefix=}" ;;
+    --prefix)           shift; [ $# -gt 0 ] && [ -n "$1" ] || kit_usage_die "--prefix needs a non-empty directory"; KIT_PREFIX="$1" ;;
+    --prefix=*)         KIT_PREFIX="${1#--prefix=}"; [ -n "$KIT_PREFIX" ] || kit_usage_die "--prefix needs a non-empty directory" ;;
     *)                  usage >&2; kit_usage_die "unknown option: $1" ;;
   esac
   shift
