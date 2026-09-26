@@ -125,6 +125,10 @@ $(psql -c 'DROP TABLE users')
 /bin/sh -c "git push origin master"
 echo 'git push origin main' | sh
 printf 'rm -rf /\n' | bash
+echo 'rm -rf /' | bash -
+echo 'rm -rf /' | sh -s
+printf 'rm -rf /' | bash -x
+echo 'rm -rf /' | sudo bash
 echo "shutdown -h now" | sudo sh
 bash -c "shutdown -h now"
 sh -c "mkfs.ext4 /dev/sda1"
@@ -266,6 +270,9 @@ bash -c 'npm test'
 git commit -m "fix: handle > .env redirects in the docs"
 echo 'ls -la' | sh
 printf 'npm test\n' | bash
+printf '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' | bash "$HOME/.multi-agent-coding/hooks/block-dangerous.sh"
+echo 'rm -rf /' | bash lint.sh
+cat payload.json | bash ./hooks/block-dangerous.sh
 echo "hello" | cat
 echo "shutdown -h now"
 printf '%s\n' "mkfs.ext4 is dangerous"

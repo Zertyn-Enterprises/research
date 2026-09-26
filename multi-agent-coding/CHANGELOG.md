@@ -1,7 +1,18 @@
 <!-- managed-by: multi-agent-coding -->
 # Changelog
 
-## 0.1.1 — unreleased
+## 0.1.2 — unreleased
+
+### Fixed
+
+- The "text piped into a shell" rule fires only when the shell reads its stdin
+  (`| sh`, `| bash -`, `| sh -s`, `| bash -x`). A shell given a script operand
+  (`| bash lint.sh`) runs the file, not the text — which is how the kit's own
+  smoke test is spelled, and it was being blocked from inside Claude Code.
+- `docs/os-support.md`: set the Windows Terminal profile's starting directory to
+  the Linux home, or every tab opens in `/mnt/c`.
+
+## 0.1.1 — 2026-09-26
 
 ### Fixed
 

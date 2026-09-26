@@ -228,8 +228,11 @@ if printf '%s' "$ANALYZED" | grep -qE "(^|[|;&[:space:]])(curl|wget)[^;&]*\|[[:s
   block "piping a remote script to an interpreter (Git & Safety §2)"
 fi
 # Text piped into a shell (`echo 'rm -rf /' | sh`): the payload is on the RAW text,
-# so run the same checks on it as if it were the command itself.
-if printf '%s' "$ANALYZED" | grep -qE "(^|[|;&[:space:]])(echo|printf|cat)[^|;&]*\|[[:space:]]*${SHELL_RE}([[:space:]]|\$)"; then
+# so run the same checks on it as if it were the command itself. Only a shell that
+# READS its stdin counts — bare, or with flags such as `-`, `-s`, `-x`. A shell given
+# a script operand (`| bash lint.sh`, `| bash "$HOME/…/block-dangerous.sh"`) runs the
+# file, not the text; that is how this kit's own smoke test is spelled.
+if printf '%s' "$ANALYZED" | grep -qE "(^|[|;&[:space:]])(echo|printf|cat)[^|;&]*\|[[:space:]]*${SHELL_RE}([[:space:]]+-[^[:space:]]*)*[[:space:]]*(\$|[;&|)])"; then
   PIPED=$(printf '%s' "$STRIPPED" \
     | sed -E "s#^[[:space:]]*(echo|printf|cat)[[:space:]]+(-[a-zA-Z]+[[:space:]]+)*##; s#[[:space:]]*\|[[:space:]]*${SHELL_RE}([[:space:]].*)?\$##" \
     | sed -e "s/^['\"]//" -e "s/['\"]\$//" -e 's/\\n$//')
