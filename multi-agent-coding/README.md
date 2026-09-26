@@ -49,7 +49,7 @@ Exit codes: `0` success, `1` error, `2` usage error. `doctor.sh` and
 
 When stdin is not a terminal (an agent or a script is running the installer) and
 `--yes` is absent, nothing is installed: the prompts cannot be answered, so the
-installer writes nothing and says so. Pass `--yes` after a dry run.
+installer writes nothing, says so, and exits 1. Pass `--yes` after a dry run.
 
 ### Environment
 

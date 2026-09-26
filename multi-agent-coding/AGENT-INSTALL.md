@@ -72,7 +72,7 @@ three.
 
 Then run the real install with the same flags as the dry run, minus `--dry-run`,
 plus `--yes`. You are not a terminal: without `--yes` the installer cannot ask its
-per-level questions, so it writes nothing and exits. Add `--yes` only after the
+per-level questions, so it writes nothing and exits 1. Add `--yes` only after the
 user has approved the exact plan you printed.
 
 ## 5. Forbidden, whatever the reason

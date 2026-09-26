@@ -208,13 +208,17 @@ EOF
 # ── Writes to a real env file: redirection (with or without a space), tee, cp, mv.
 #    `.env.example` / `.env.sample` / `.env.template` are documentation and stay open.
 ENV_FILE='(\./)?\.env(\.[A-Za-z0-9_.-]+)?'
-ENV_DOC='\.env\.(example|sample|template)([[:space:]]|$)'
-env_target_hit() { # <text> → 0 when it names a real env file as a write target
-  printf '%s' "$1" | grep -qE "$2" && ! printf '%s' "$1" | grep -qE "$ENV_DOC"
+ENV_END='([[:space:]]|$|[;&|)])'
+env_target_hit() { # <text> <ere-with-ENV_FILE> → 0 when a matched target is a REAL env file
+  # The exemption is per matched target, not per command: `cp .env.example .env`
+  # writes .env even though .env.example appears in the same segment.
+  local hit
+  hit=$(printf '%s' "$1" | grep -oE "$2") || return 1
+  printf '%s\n' "$hit" | grep -vE '\.env\.(example|sample|template)'"$ENV_END" | grep -q .
 }
 # Judged on the quote-blanked text: an unquoted `> .env` is a redirection, while a
 # commit message that says "> .env" is a string.
-if env_target_hit "$ANALYZED" ">>?[[:space:]]*${ENV_FILE}([[:space:]]|$)"; then
+if env_target_hit "$ANALYZED" ">>?[[:space:]]*${ENV_FILE}${ENV_END}"; then
   block "direct write to a .env file — use the platform's env vars (Git & Safety §1)"
 fi
 while IFS= read -r eseg; do
@@ -223,8 +227,13 @@ while IFS= read -r eseg; do
   etok="${eseg%%[[:space:]]*}"
   case "${etok##*/}" in
     tee|cp|mv|install)
-      if env_target_hit "$eseg" "[[:space:]]${ENV_FILE}([[:space:]]|$)"; then
-        block "direct write to a .env file — use the platform's env vars (Git & Safety §1)"
+      # the write target is the LAST argument for cp/mv/install; any argument for tee
+      if [ "${etok##*/}" = "tee" ]; then
+        env_target_hit "$eseg" "[[:space:]]${ENV_FILE}${ENV_END}" \
+          && block "direct write to a .env file — use the platform's env vars (Git & Safety §1)"
+      else
+        env_target_hit "$eseg" "[[:space:]]${ENV_FILE}[[:space:]]*$" \
+          && block "direct write to a .env file — use the platform's env vars (Git & Safety §1)"
       fi ;;
   esac
 done <<EOF

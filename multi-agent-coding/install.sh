@@ -187,7 +187,9 @@ HAS_CLAUDE=0; kit_has_claude && HAS_CLAUDE=1
 HAS_CODEX=0;  kit_has_codex  && HAS_CODEX=1
 HAS_GROK=0;   kit_has_grok   && HAS_GROK=1
 
-if [ "$HAS_CLAUDE" = "0" ] && [ "$HAS_CODEX" = "0" ] && [ "$HAS_GROK" = "0" ]; then
+# Level 4 (plan) only writes into the install prefix, so it needs no CLI at all.
+if [ "$HAS_CLAUDE" = "0" ] && [ "$HAS_CODEX" = "0" ] && [ "$HAS_GROK" = "0" ] \
+   && { sel_has rules || sel_has safety || sel_has claude-quality; }; then
   kit_die "no supported CLI found (Claude Code, Codex, Grok Build) — nothing was written.
 Install one first, or create its config dir if it lives somewhere unusual."
 fi
@@ -258,7 +260,8 @@ kit_say ""
 ask_level() { # 0 = install, 1 = skip
   if [ "$ASSUME_YES" = "1" ] || [ "$KIT_DRY_RUN" = "1" ]; then return 0; fi
   if [ ! -t 0 ]; then
-    kit_say "skipped level $1 (no terminal to ask on; use --yes or --only)"
+    kit_say "skipped level $1 (no terminal to ask on; use --yes after a dry run)"
+    NO_TTY_SKIP=1
     return 1
   fi
   printf 'install level %s? [y/N] ' "$1"
@@ -376,6 +379,7 @@ kit_say "=== install"
 INSTALLED=""
 SKIPPED=""
 LEVEL_SKIPPED=0
+NO_TTY_SKIP=0
 for lv in $SELECTED; do
   kit_say ""
   kit_say "--- level $lv"
@@ -393,6 +397,10 @@ done
 kit_say ""
 kit_say "=== done"
 if [ -z "$INSTALLED" ]; then
+  if [ "${NO_TTY_SKIP:-0}" = "1" ]; then
+    # An agent or a script must not read "nothing happened" as success.
+    kit_die "nothing installed: no terminal to answer the per-level prompts — re-run with --yes after a dry run"
+  fi
   if [ -n "$SKIPPED" ]; then kit_say "nothing installed — skipped:$SKIPPED (its CLI was not found)"
   else kit_say "nothing selected — no change"; fi
   exit 0

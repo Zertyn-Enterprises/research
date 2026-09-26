@@ -105,6 +105,10 @@ echo SECRET=1 >> .env.local
 printf 'K=v\n' | tee .env
 cp creds.txt .env
 mv .env.staging .env
+echo k=v > .env; ls
+echo k=v >.env|cat
+cp .env.example .env
+echo k=v > .env && cat .env.example
 $(git push origin main)
 `git push origin main`
 sh -c "git push origin main"
@@ -164,6 +168,7 @@ cat .env.example
 echo "API_KEY=" > .env.example
 tee .env.example < template.txt
 cp .env.example .env.sample
+cp .env .env.example
 cat .env.local
 grep -c = .env
 sh -c "git status"

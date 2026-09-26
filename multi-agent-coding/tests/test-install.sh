@@ -133,6 +133,28 @@ new_home nocli
 rc="$(run_log "$LOGS/nocli.log" bash "$PKG/install.sh" --yes)"
 t_assert_eq "no supported CLI fails with exit 1" "1" "$rc"
 t_assert_grep "it says no supported CLI was found" "no supported CLI found" "$LOGS/nocli.log"
+rc="$(run_log "$LOGS/nocli-plan.log" bash "$PKG/install.sh" --yes --only plan)"
+t_assert_eq "level 4 alone needs no CLI (exit 0)" "0" "$rc"
+t_assert "level 4 alone wrote its templates into the prefix" test -f "$HOME/.multi-agent-coding/templates/PLAN.md"
+
+# ---------------------------------------------------------------- non-tty without --yes
+
+new_home notty .claude
+rc="$(run_log "$LOGS/notty.log" bash "$PKG/install.sh" --only rules < /dev/null)"
+t_assert_eq "non-tty without --yes exits 1 (an agent must not read it as success)" "1" "$rc"
+t_assert_grep "it explains the per-level prompts could not be answered" "no terminal to answer" "$LOGS/notty.log"
+t_assert_eq "it wrote nothing" "1" "$(rc_of test -e "$HOME/.claude/rules/core.md")"
+
+# ---------------------------------------------------------------- a Grok hook file the user replaced stays
+
+new_home grok-foreign .grok
+bash "$PKG/install.sh" --yes --only safety > "$LOGS/grok-foreign-install.log" 2>&1
+printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"my-own-audit"}]}]}}\n' \
+  > "$HOME/.grok/hooks/multi-agent-coding.json"
+rc="$(run_log "$LOGS/grok-foreign-uninst.log" bash "$PKG/uninstall.sh" --yes)"
+t_assert_eq "uninstall with a replaced Grok hook file exits 0" "0" "$rc"
+t_assert "the user's replacement file is still there" test -f "$HOME/.grok/hooks/multi-agent-coding.json"
+t_assert_grep "it says it left the file alone" "left alone: $HOME/.grok/hooks/multi-agent-coding.json" "$LOGS/grok-foreign-uninst.log"
 
 # ---------------------------------------------------------------- dry run
 

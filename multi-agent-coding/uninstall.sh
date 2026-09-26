@@ -186,6 +186,12 @@ EOF
 while IFS= read -r p; do
   [ -n "$p" ] || continue
   if [ ! -e "$p" ] && [ ! -L "$p" ]; then kit_info "already gone: $p"; continue; fi
+  # Still ours only if it still wires our hook; a file the user replaced stays.
+  if ! grep -q 'block-dangerous.sh' "$p" 2>/dev/null; then
+    kit_say "left alone: $p no longer contains our hook entry"
+    LEFT=$((LEFT + 1))
+    continue
+  fi
   if [ "$KIT_DRY_RUN" = "1" ]; then
     kit_say "would remove $p"
   else
