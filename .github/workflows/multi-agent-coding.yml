@@ -1,0 +1,98 @@
+name: multi-agent-coding
+
+# The kit must work on the two systems it claims to support, with the stock bash of
+# each: macOS ships bash 3.2, ubuntu ships bash 5. Every script is syntax-checked with
+# that bash, then the suite runs. A skipped test is not a pass: run-tests.sh exits 3.
+
+on:
+  push:
+    paths:
+      - 'multi-agent-coding/**'
+      - '.github/workflows/multi-agent-coding.yml'
+  pull_request:
+    paths:
+      - 'multi-agent-coding/**'
+      - '.github/workflows/multi-agent-coding.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq jq
+
+      - name: Install jq (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          command -v jq >/dev/null 2>&1 || brew install jq
+
+      # Required, not optional: tests/test-pre-commit.sh needs gitleaks, and a skipped
+      # test turns the suite yellow (exit 3). Linux downloads a pinned release; macOS
+      # uses whatever formula Homebrew ships (brew has no pin), so the two legs may
+      # run different gitleaks versions.
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          set -euo pipefail
+          if command -v gitleaks >/dev/null 2>&1; then
+            gitleaks version
+            exit 0
+          fi
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install gitleaks
+          else
+            curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+              | tar -xz -C /tmp gitleaks
+            sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          fi
+          gitleaks version
+
+      - name: Versions
+        run: |
+          bash --version | head -1
+          jq --version
+          git --version
+          uname -a
+
+      - name: Syntax check every script
+        run: |
+          set -euo pipefail
+          # The stock shell of each OS, by absolute path: /bin/bash is 3.2 on macOS
+          # and 5.x on ubuntu; a PATH `bash` could be a newer Homebrew build.
+          SH=/bin/bash
+          "$SH" --version | head -1
+          find multi-agent-coding -type f -name '*.sh' -print0 | xargs -0 -n1 "$SH" -n
+          for d in multi-agent-coding/tools multi-agent-coding/githooks; do
+            if [ ! -d "$d" ]; then
+              echo "ERROR: missing package directory: $d" >&2
+              exit 1
+            fi
+            # only files that declare a bash shebang; data or docs may land here later
+            find "$d" -type f -print0 | while IFS= read -r -d '' f; do
+              if head -1 "$f" | grep -qE '^#!.*bash'; then "$SH" -n "$f"; fi
+            done
+          done
+          echo "syntax ok"
+
+      - name: Test suite
+        run: bash multi-agent-coding/tests/run-tests.sh

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# managed-by: multi-agent-coding
+# Secrets gate over staged changes (Git & Safety §1). Enabled by install.sh
+# level 2 via `git config --global core.hooksPath <prefix>/githooks`.
+# Fail-open WITH a loud warning when gitleaks is missing: a machine without the
+# scanner still commits, but nobody can mistake it for a clean scan.
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks protect --staged --redact; then
+    echo "pre-commit: gitleaks found staged secrets — commit blocked. Fix or unstage them; never bypass with --no-verify." >&2
+    exit 1
+  fi
+else
+  echo "pre-commit WARNING: gitleaks not installed — staged changes were NOT scanned for secrets (install gitleaks to enable the gate)." >&2
+fi
+exit 0

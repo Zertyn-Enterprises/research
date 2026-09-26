@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# managed-by: multi-agent-coding
+# plan-init — create a lane's PLAN.md from the kit template.
+#
+# Usage: plan-init <lane>
+#
+# The plan file itself lives in the MAIN checkout, at
+# <main-checkout>/.claude/plans/<lane>.md, so every lane's plan is visible in one
+# place and two worktrees never conflict over it. The current worktree gets a
+# PLAN.md symlink to it, and both paths are added to the repository's
+# .git/info/exclude so the plan is never committed.
+#
+# Safe to re-run: an existing lane file is kept as it is, never overwritten.
+#
+# Exit codes: 0 ok - 1 error (needs a human) - 2 usage error
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: plan-init <lane>
+
+Creates <main-checkout>/.claude/plans/<lane>.md from the kit's PLAN template,
+symlinks PLAN.md at the current worktree root to it, and git-excludes both.
+An existing lane file is never overwritten.
+
+Exit codes: 0 ok - 1 error - 2 usage error
+USAGE
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  '')        echo "ERROR: missing lane name" >&2; usage >&2; exit 2 ;;
+  -*)        echo "ERROR: unknown option: $1" >&2; usage >&2; exit 2 ;;
+esac
+
+lane="$1"
+shift
+if [ $# -gt 0 ]; then
+  echo "ERROR: too many arguments" >&2
+  usage >&2
+  exit 2
+fi
+
+# The lane name becomes a path segment, so keep it to a safe alphabet.
+case "$lane" in
+  *[!A-Za-z0-9._-]* | .* )
+    echo "ERROR: invalid lane name: $lane (use letters, digits, '.', '_', '-'; no leading dot)" >&2
+    exit 2
+    ;;
+esac
+
+KIT_HOME="${MULTI_AGENT_CODING_HOME:-$HOME/.multi-agent-coding}"
+TPL="$KIT_HOME/templates/PLAN.md"
+
+# --git-common-dir is the main checkout's .git even from inside a worktree, but
+# it can come back relative to the current directory — resolve it before any cd.
+common="$(git rev-parse --git-common-dir 2>/dev/null)" || {
+  echo "ERROR: not inside a git repository" >&2
+  exit 1
+}
+case "$common" in
+  /*) ;;
+  # pwd -P so the resolved path matches what git itself reports for the
+  # worktree root, even when a parent directory is a symlink.
+  *)  common="$(cd "$common" && pwd -P)" ;;
+esac
+
+worktree_root="$(git rev-parse --show-toplevel)"
+main_root="$(dirname "$common")"
+plans_dir="$main_root/.claude/plans"
+lane_file="$plans_dir/$lane.md"
+plan_link="$worktree_root/PLAN.md"
+
+mkdir -p "$plans_dir"
+
+if [ -e "$lane_file" ]; then
+  echo "kept: $lane_file already exists (not overwritten)"
+else
+  if [ ! -r "$TPL" ]; then
+    echo "ERROR: template not found: $TPL" >&2
+    echo "       Install level 4 (plan) of this kit, or set MULTI_AGENT_CODING_HOME." >&2
+    exit 1
+  fi
+  sed "s|<lane>|$lane|g" "$TPL" > "$lane_file"
+  echo "created: $lane_file"
+fi
+
+if [ -L "$plan_link" ]; then
+  if [ "$(readlink "$plan_link")" = "$lane_file" ]; then
+    echo "ok: $plan_link -> $lane_file"
+  else
+    echo "ERROR: $plan_link is already a symlink to $(readlink "$plan_link")" >&2
+    echo "       Remove it first if this worktree should follow lane '$lane'." >&2
+    exit 1
+  fi
+elif [ -e "$plan_link" ]; then
+  echo "ERROR: $plan_link exists and is not a symlink — a human wrote it; not touching it." >&2
+  exit 1
+else
+  ln -s "$lane_file" "$plan_link"
+  echo "linked: $plan_link -> $lane_file"
+fi
+
+# Exclusions live in the main .git so every worktree of this repo inherits them.
+exclude_file="$common/info/exclude"
+mkdir -p "$common/info"
+[ -f "$exclude_file" ] || : > "$exclude_file"
+# Appending to a file whose last line has no newline would join the two lines.
+if [ -s "$exclude_file" ] && [ "$(tail -c 1 "$exclude_file" | wc -l | tr -d ' ')" = "0" ]; then
+  printf '\n' >> "$exclude_file"
+fi
+# Anchored to the repository root: an unanchored `PLAN.md` would hide every file of
+# that name at any depth, in every worktree.
+for pat in '/PLAN.md' '/.claude/plans/'; do
+  if grep -Fqx -- "$pat" "$exclude_file"; then
+    continue
+  fi
+  printf '%s\n' "$pat" >> "$exclude_file"
+  echo "excluded: $pat (in $exclude_file)"
+done
+
+echo "done: lane '$lane' ready — fill in the tasks before starting work"
