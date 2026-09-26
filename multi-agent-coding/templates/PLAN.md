@@ -5,7 +5,7 @@
      The worker session reads this at start and works the tasks in order.
      Keep it short: a plan is decisions already made, not a spec. -->
 
-- **Lane:** <name> · **Worktree:** <path> · **Branch:** <branch>
+- **Lane:** <lane> · **Worktree:** <path> · **Branch:** <branch>
 - **Goal:** <one sentence: what is true when this plan is done>
 - **Base:** <main | develop>@<sha7>   ← rebase onto its tip before each task and each PR
 - **Merge policy (blast radius):** docs → auto · code → hold (the human merges) · publish/deploy → NEVER

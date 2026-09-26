@@ -18,7 +18,7 @@ fi
 usage() {
   cat <<USAGE
 usage: bash install.sh [--dry-run] [--yes] [--link] [--level N] [--only LIST]
-                       [--prefix DIR] [--uninstall ...] [--help]
+                       [--prefix DIR] [--uninstall [--restore-backups]] [--help]
 
 Levels (opt-in; with no --level and no --only all four are offered, one prompt each):
   1 rules           the rules file for every CLI found (Claude Code, Codex, Grok Build)
@@ -143,6 +143,11 @@ fi
 
 if [ -z "$SELECTED" ]; then
   SELECTED=" rules safety claude-quality plan"
+fi
+# agentsify and plan-init (level 3) read the templates level 4 installs.
+if sel_has claude-quality && ! sel_has plan; then
+  select_level plan
+  PLAN_AUTO_ADDED=1
 fi
 
 # ---------------------------------------------------------------- package completeness
@@ -297,9 +302,26 @@ do_rules() {
   fi
 }
 
+settings_shape_ok() { # settings_shape_ok <json-file> — the keys we merge into must have the shapes we expect
+  [ -f "$1" ] || return 0
+  jq -e '((.hooks // {}) | type) == "object"
+         and (((.hooks // {}).PreToolUse // []) | type) == "array"
+         and ((.permissions // {}) | type) == "object"
+         and (((.permissions // {}).deny // []) | type) == "array"
+         and (((.permissions // {}).ask // []) | type) == "array"' "$1" >/dev/null 2>&1
+}
+
 do_safety() {
   kit_need_jq
   local hfrag pfrag
+  # Refuse before the first write: a settings file with an unexpected shape would
+  # otherwise leave the level half-installed (hook copied, nothing wired).
+  if [ "$HAS_CLAUDE" = "1" ] && ! settings_shape_ok "$KIT_SETTINGS"; then
+    kit_die "$KIT_SETTINGS has an unexpected shape (.hooks must be an object, .hooks.PreToolUse an array, .permissions.deny/.ask arrays) — fix it by hand, then re-run. Nothing was written for this level."
+  fi
+  if [ "$HAS_CODEX" = "1" ] && [ -f "$KIT_CODEX_DIR/hooks.json" ] && ! settings_shape_ok "$KIT_CODEX_DIR/hooks.json"; then
+    kit_die "$KIT_CODEX_DIR/hooks.json has an unexpected shape (.hooks must be an object, .hooks.PreToolUse an array) — fix it by hand, then re-run. Nothing was written for this level."
+  fi
   kit_install_file hooks/block-dangerous.sh "$KIT_PREFIX/hooks/block-dangerous.sh" 755
   hfrag="$(kit_fragment config/hooks.json)"
   pfrag="$(kit_fragment config/permissions.json)"
@@ -366,7 +388,7 @@ do_claude_quality() {
   kit_link_to "$KIT_PREFIX/tools/plan-init" "$HOME/.local/bin/plan-init"
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) : ;;
-    *) kit_warn "$HOME/.local/bin is not on PATH — add it to use agentsify and plan-init" ;;
+    *) kit_warn "$HOME/.local/bin is not on PATH — add it to use agentsify and plan-init (on Ubuntu a new login shell does it once the directory exists)" ;;
   esac
 }
 
@@ -375,6 +397,9 @@ do_plan() {
   kit_install_file templates/PLAN.md "$KIT_PREFIX/templates/PLAN.md"
 }
 
+if [ "${PLAN_AUTO_ADDED:-0}" = "1" ]; then
+  kit_info "level plan added to the selection: agentsify and plan-init read its templates"
+fi
 kit_say "=== install"
 INSTALLED=""
 SKIPPED=""

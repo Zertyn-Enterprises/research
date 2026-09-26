@@ -56,12 +56,16 @@ kit_bash_ok() { # bash 3.2 or newer
 kit_init() { # resolve the install prefix and the per-CLI directories
   [ -n "$KIT_ROOT" ] || kit_die "KIT_ROOT is not set (internal error)"
   [ -n "${HOME:-}" ] || kit_die "HOME is not set"
+  KIT_HOME_PHYS="$(cd "$HOME" 2>/dev/null && pwd -P)" || kit_die "HOME does not exist: $HOME"
   if [ -z "${KIT_PREFIX:-}" ]; then
     KIT_PREFIX="${MULTI_AGENT_CODING_HOME:-$HOME/.$KIT_NAME}"
   fi
+  # Trailing slashes off: "$HOME/" would pass the containment test below with an
+  # empty tail and then mean HOME itself — which the uninstaller sweeps for empty dirs.
+  while [ "${KIT_PREFIX%/}" != "$KIT_PREFIX" ] && [ -n "${KIT_PREFIX%/}" ]; do KIT_PREFIX="${KIT_PREFIX%/}"; done
   case "$KIT_PREFIX" in
-    "$HOME"/*) : ;;
-    *) kit_die "the install prefix must live inside HOME, got: $KIT_PREFIX" ;;
+    "$HOME"/?*) : ;;
+    *) kit_die "the install prefix must live inside HOME, as a directory of its own (not HOME itself), got: $KIT_PREFIX" ;;
   esac
   # A prefix match is not containment: "$HOME/../elsewhere" starts with $HOME too.
   case "/$KIT_PREFIX/" in
@@ -70,8 +74,9 @@ kit_init() { # resolve the install prefix and the per-CLI directories
   KIT_CLAUDE_DIR="$HOME/.claude"
   KIT_CLAUDE_DIR_SOURCE="default"
   if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
-    KIT_CLAUDE_DIR="$CLAUDE_CONFIG_DIR"
+    KIT_CLAUDE_DIR="${CLAUDE_CONFIG_DIR%/}"
     KIT_CLAUDE_DIR_SOURCE="CLAUDE_CONFIG_DIR"
+    kit_path_in_home "$KIT_CLAUDE_DIR" || kit_die "CLAUDE_CONFIG_DIR must live inside HOME, got: $CLAUDE_CONFIG_DIR"
   fi
   KIT_CODEX_DIR="$HOME/.codex"
   KIT_GROK_DIR="$HOME/.grok"
@@ -103,14 +108,41 @@ kit_cli_state() { # kit_cli_state <binary> <config-dir> -> one human readable li
 
 # ---------------------------------------------------------------- ownership
 
+kit_path_in_home() { # 0 when the path, as written AND as resolved through symlinks, is inside HOME
+  local p="$1" parent phys
+  case "$p" in
+    "$HOME"/?*) : ;;
+    *) return 1 ;;
+  esac
+  case "/$p/" in
+    */../*) return 1 ;;
+  esac
+  # A symlinked ancestor (~/.claude -> /somewhere/else) would carry the write outside
+  # HOME while every printed path still looks local: check the physical location of
+  # the nearest ancestor that exists (the parent itself may not exist yet).
+  parent="$(dirname "$p")"
+  while [ ! -e "$parent" ] && [ "$parent" != "/" ] && [ "$parent" != "$HOME" ]; do
+    parent="$(dirname "$parent")"
+  done
+  if [ -e "$parent" ]; then
+    phys="$(cd "$parent" 2>/dev/null && pwd -P)" || return 1
+    case "$phys/" in
+      "${KIT_HOME_PHYS:-$HOME}"/*) : ;;
+      *) return 1 ;;
+    esac
+  fi
+  if [ -L "$p" ] && [ -e "$p" ]; then
+    phys="$(cd "$p" 2>/dev/null && pwd -P)" || phys="$(cd "$(dirname "$p")" && cd "$(dirname "$(readlink "$p")")" 2>/dev/null && pwd -P)" || return 1
+    case "$phys/" in
+      "${KIT_HOME_PHYS:-$HOME}"/*) : ;;
+      *) return 1 ;;
+    esac
+  fi
+  return 0
+}
+
 kit_assert_in_home() {
-  case "$1" in
-    "$HOME"/*) : ;;
-    *) kit_die "refusing to write outside HOME: $1" ;;
-  esac
-  case "/$1/" in
-    */../*) kit_die "refusing a path with '..' (it could leave HOME): $1" ;;
-  esac
+  kit_path_in_home "$1" || kit_die "refusing to write outside HOME (as written or through a symlink): $1"
 }
 
 kit_is_ours() { # our marker in the head of the file, or a link into the prefix/checkout
@@ -128,10 +160,23 @@ kit_is_ours() { # our marker in the head of the file, or a link into the prefix/
   head -n 20 "$p" 2>/dev/null | grep -Fq -- "$KIT_MARKER"
 }
 
+kit_owned() { # kit_owned <path> — ours AND recorded in the manifest (one predicate for backup and doctor)
+  local p="$1"
+  [ -f "$KIT_MANIFEST" ] && grep -Fq -- "	$p" "$KIT_MANIFEST" || return 1
+  if kit_is_ours "$p"; then return 0; fi
+  # The Grok hook file is written without a marker (JSON); it is ours while it still wires our hook.
+  case "$p" in
+    "$KIT_GROK_DIR"/hooks/*.json) grep -q 'block-dangerous.sh' "$p" 2>/dev/null && return 0 ;;
+  esac
+  return 1
+}
+
 kit_backup() { # back up a pre-existing file or link that is not ours
   local p="$1" b
   if [ ! -e "$p" ] && [ ! -L "$p" ]; then return 0; fi
-  if kit_is_ours "$p"; then return 0; fi
+  # "Ours" is only trusted when the manifest says we installed it: a user's own file
+  # that happens to carry the marker still gets a backup.
+  if kit_owned "$p"; then return 0; fi
   b="$p.bak-$(kit_ts)"
   if [ "$KIT_DRY_RUN" = "1" ]; then kit_say "would back up $p -> $(basename "$b")"; return 0; fi
   if [ -L "$p" ]; then cp -P "$p" "$b"; else cp -p "$p" "$b"; fi
@@ -275,7 +320,14 @@ kit_json_apply() {
   fi
   kit_mkdirp "$(dirname "$f")"
   kit_backup_once "$f"
-  mv "$tmp" "$f"
+  if [ -L "$f" ]; then
+    # A dotfiles-style symlink stays a symlink: write through it instead of
+    # replacing the link with a regular file and silently detaching the target.
+    cat "$tmp" > "$f"
+    rm -f "$tmp"
+  else
+    mv "$tmp" "$f"
+  fi
 }
 
 kit_json_note() { # kit_json_note <file> <what> — one line, honest in every mode
@@ -374,8 +426,11 @@ kit_codex_cap() { # kit_codex_cap <config.toml> <bytes-the-rules-file-needs>
         kit_warn "project_doc_max_bytes in $f is not a plain number — left alone"
         return 0 ;;
     esac
-    if [ "$cur" -ge "$need" ]; then
-      kit_info "project_doc_max_bytes is $cur (rules file needs $need) — unchanged"
+    # The cap is a COMBINED budget for the global file plus every project AGENTS.md
+    # Codex loads; the rules file alone fitting is not enough, so raise anything
+    # below our target, not just anything below the rules file.
+    if [ "$cur" -ge "$KIT_CODEX_CAP" ]; then
+      kit_info "project_doc_max_bytes is $cur (>= $KIT_CODEX_CAP; rules file is $need bytes) — unchanged"
       kit_manifest_add "codex:cap" "$f"
       return 0
     fi
@@ -464,7 +519,7 @@ kit_doctor_backup_candidates() { # destinations that exist and are not ours
     "$HOME/.local/bin/plan-init"
   do
     if [ -e "$p" ] || [ -L "$p" ]; then
-      if ! kit_is_ours "$p"; then printf '%s\n' "$p"; fi
+      if ! kit_owned "$p"; then printf '%s\n' "$p"; fi
     fi
   done
 }
@@ -484,7 +539,6 @@ kit_doctor_report() { # read-only; returns 1 when a hard dependency is missing
   kit_doctor_dep git required || rc=1
   kit_doctor_dep jq levels "(level 2 safety, level 3 claude-quality)" || true
   kit_doctor_dep gitleaks optional "— the pre-commit hook warns and passes without it" || true
-  kit_doctor_dep python3 optional || true
   kit_say ""
   kit_say "CLIs"
   kit_info "Claude Code: $(kit_cli_state claude "$KIT_CLAUDE_DIR")"
@@ -508,9 +562,10 @@ kit_doctor_report() { # read-only; returns 1 when a hard dependency is missing
     kit_info "rules/core.md: MISSING from the package"
     rc=1
   fi
-  if [ -f "$KIT_CODEX_DIR/config.toml" ]; then
-    n="$(kit_codex_cap_current "$KIT_CODEX_DIR/config.toml")"
-    kit_info "codex project_doc_max_bytes: ${n:-absent (Codex default 32768)}"
+  if kit_has_codex; then
+    n=""
+    [ -f "$KIT_CODEX_DIR/config.toml" ] && n="$(kit_codex_cap_current "$KIT_CODEX_DIR/config.toml")"
+    kit_info "codex project_doc_max_bytes: ${n:-absent (Codex default 32768)} — level 1 sets $KIT_CODEX_CAP when below"
   fi
   kit_say ""
   kit_say "install state"
@@ -521,8 +576,12 @@ kit_doctor_report() { # read-only; returns 1 when a hard dependency is missing
   fi
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) : ;;
-    *) kit_info "note: $HOME/.local/bin is not on PATH (level 3 installs two commands there)" ;;
+    *) kit_info "note: $HOME/.local/bin is not on PATH (level 3 installs two commands there);"
+       kit_info "      on Ubuntu a new login shell adds it once the directory exists (~/.profile)" ;;
   esac
+  if kit_have git; then
+    kit_info "global core.hooksPath: $(git config --global --get core.hooksPath 2>/dev/null || printf 'unset') (level 2 sets it only when unset)"
+  fi
   kit_say ""
   kit_say "would back up on install"
   n=0

@@ -3,9 +3,12 @@
 
 The operating rules for coding agents. `install.sh` installs this single file
 once per CLI it finds, at the path that CLI reads for global instructions, so
-every agent you run works from the same rules. Per-repo rules live in that
-repo's `AGENTS.md` (`CLAUDE.md` is a symlink to it) — never a second global
-copy.
+every agent you run works from the same rules: `~/.claude/rules/core.md` for
+Claude Code (Kimi Code and the GLM coding plans read the same directory),
+`~/.codex/AGENTS.md` for Codex, and `~/.grok/rules/core.md` for Grok Build only
+when Claude Code is absent — otherwise Grok reads the Claude rules directory
+through its compatibility layer. Per-repo rules live in that repo's `AGENTS.md`
+(`CLAUDE.md` is a symlink to it) — never a second global copy.
 
 Sections are referenced as `<Section> §n` (e.g. "Coding Discipline §5"); that
 numbering is stable because hooks and templates cite it. Terms that name one
@@ -352,12 +355,15 @@ kit) — that's the backstop, not a reason to relax.
 ## 1. Never commit secrets
 - API keys, tokens, passwords, OAuth secrets, DB URLs with credentials — never in git.
 - `.env`, `.env.local`, `.env.*.local` stay gitignored. Document required vars in `.env.example` (names only).
+- Never write a real `.env` file (`.env`, `.env.local`, `.env.production`, …) — use the platform's env vars; `.env.example` holds names only.
+- Never read or copy SSH keys or credential files (`~/.ssh`, `/etc/shadow`, `~/.aws/credentials`, `~/.netrc`, `~/.kube/config`, `~/.docker/config.json`) — a task never needs their contents.
 - Staged a secret by accident? Surface it to the human immediately. Don't silently rewrite history.
 
 ## 2. Never run destructive system commands
 - `rm -rf /`, `rm -rf ~/`, or any wildcard delete at root.
 - `chmod -R 777`, `dd` to a disk device, `mkfs`/`fdisk`/`parted`, `shutdown`/`reboot`.
-- Piping a remote script straight to a shell (`curl … | bash`).
+- Changing the system permission database (`tccutil`) or erasing/partitioning disks (`diskutil`, `wipefs`, `sgdisk`).
+- Piping a remote script straight to a shell or any interpreter (`curl … | bash`, `| python3`, `| node`).
 
 ## 3. Branch & PR discipline
 - Work on a feature branch. Never commit or push to `main`/`master` directly.

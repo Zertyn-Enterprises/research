@@ -11,24 +11,24 @@ Everything in this kit is a bash script or a file that a bash script installs. b
 
 | Component | macOS 13+ | Ubuntu 20.04+ / Debian 10+ | Windows + WSL2 | Native Windows |
 |---|---|---|---|---|
-| Level 1 — `rules/core.md` into each CLI | yes | yes | yes | no |
-| Level 1 — `project_doc_max_bytes` patch in `~/.codex/config.toml` | yes | yes | yes | no |
-| Level 2 — `block-dangerous.sh` hook | yes | yes | yes | no |
-| Level 2 — permission fragment merged into `~/.claude/settings.json` | yes | yes | yes | the file is portable, the installer is not |
-| Level 2 — `gitleaks` pre-commit via global `core.hooksPath` | yes, needs `gitleaks` | yes, needs `gitleaks` | yes, needs `gitleaks` | no |
-| Level 3 — statusline | yes | yes | yes | no |
-| Level 3 — `test-author` agent, `context-init` / `techdebt` skills | yes | yes | yes | the files are markdown, the installer is not |
-| Level 3 — `agentsify`, `plan-init` in `~/.local/bin` | yes | yes | yes | no |
-| Level 4 — templates | yes | yes | yes | no |
+| Level 1 — `rules/core.md` into each CLI | yes | yes | expected | no |
+| Level 1 — `project_doc_max_bytes` patch in `~/.codex/config.toml` | yes | yes | expected | no |
+| Level 2 — `block-dangerous.sh` hook | yes | yes | expected | no |
+| Level 2 — permission fragment merged into `~/.claude/settings.json` | yes | yes | expected | the file is portable, the installer is not |
+| Level 2 — `gitleaks` pre-commit via global `core.hooksPath` | yes, needs `gitleaks` | yes, needs `gitleaks` | expected, needs `gitleaks` | no |
+| Level 3 — statusline | yes | yes | expected | no |
+| Level 3 — `test-author` agent, `context-init` / `techdebt` skills | yes | yes | expected | the files are markdown, the installer is not |
+| Level 3 — `agentsify`, `plan-init` in `~/.local/bin` | yes | yes | expected | no |
+| Level 4 — templates | yes | yes | expected | no |
 | Roadmap — cross-model review (`xreview`) | planned | planned | planned | no |
 | Roadmap — session coordination ledger | planned | planned | planned | no |
 | Roadmap — fleet / tmux navigation | planned | planned | planned | no |
 | Roadmap — token and cost ledger | planned | planned | planned | no, see `fcntl` below |
 | Roadmap — menu-bar widgets | planned, macOS only | no | no | no |
 
-"yes" here means the component is expected to work on that platform. Level 1-4 are
-exercised by the test suite on macOS and on `ubuntu-latest` in CI; WSL2 is not in
-CI, and is not verified by us.
+"yes" means we run the component on that platform: levels 1-4 are exercised by the
+test suite on macOS and on `ubuntu-latest` in CI. "expected" means it should work
+and we have not checked — WSL2 is not in CI and is not verified by us.
 
 ## Why native Windows is out
 
@@ -81,20 +81,26 @@ Then restart, create your Linux user, and from inside the distribution:
 
 ```bash
 sudo apt update && sudo apt install -y git jq
+sudo apt install -y bubblewrap socat   # only if you want Claude Code's Linux sandbox
 ```
 
 Three things matter after that:
 
 1. **Keep your repositories inside the Linux filesystem.** Clone into `~/code` or
-   similar, not into `/mnt/c/...`. Microsoft's own guidance is to store project
-   files in the Linux file system for performance
-   ([WSL setup](https://learn.microsoft.com/en-us/windows/wsl/setup/environment)).
-   Cross-filesystem work is slow enough to change how an agent feels to use.
-2. **Install the CLIs and this kit inside WSL2**, not on the Windows side. `$HOME`
-   must be the Linux home. If `doctor.sh` prints a `/mnt/c` path anywhere, you are
-   in the wrong place.
-3. **Add a Windows Terminal profile** for the distribution and make it your default,
-   so you are not accidentally in PowerShell when you start an agent.
+   similar, not into `/mnt/c/...`. Two reasons. Microsoft's own guidance is to store
+   project files in the Linux file system for performance
+   ([WSL setup](https://learn.microsoft.com/en-us/windows/wsl/setup/environment)),
+   and cross-filesystem work is slow enough to change how an agent feels to use. The
+   second is symlinks: `install.sh --link`, `plan-init` and `agentsify` all create
+   them, and on a mounted Windows drive they typically fail (not verified by us).
+2. **Install the CLIs and this kit inside the distribution**, not on the Windows
+   side. A Claude Code installed on Windows never sees this kit: it reads a Windows
+   `%USERPROFILE%\.claude`, not the Linux `~/.claude` the installer writes. `$HOME`
+   must be the Linux home, and if `doctor.sh` prints a `/mnt/c` path anywhere, you
+   are in the wrong place.
+3. **Add a Windows Terminal profile** for the distribution and make the Ubuntu
+   profile the default, so you are not accidentally in PowerShell when you start an
+   agent.
 
 `doctor.sh` detects WSL2 by looking for `microsoft` in `/proc/version`, and reports
 it as a distinct platform rather than plain Linux.

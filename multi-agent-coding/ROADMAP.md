@@ -39,8 +39,6 @@ reason the kit is safe to install at all:
 5. **Degrade, do not block.** A module that cannot do its job says so — the
    cross-model gate reports `SKIPPED` when you have one subscription, it does not
    stop you opening a PR.
-6. **No Spanish, no private paths, no machine-specific assumptions** in anything
-   published here. The kit is the general version, not a copy of one machine.
 
 ## Not planned
 

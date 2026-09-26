@@ -22,7 +22,7 @@ bash multi-agent-coding/doctor.sh
 
 `doctor.sh` is read-only. Paste its complete output into your reply — do not
 summarise it. It reports the operating system (macOS, Linux, or WSL2), the bash
-version, whether `git`, `jq`, `gitleaks` and `python3` are present, which CLIs it
+version, whether `git`, `jq` and `gitleaks` are present, which CLIs it
 detected, and every existing file that an install would back up.
 
 If it reports a missing `jq`, say so: levels 2 and 3 need it and the installer
@@ -90,26 +90,39 @@ user has approved the exact plan you printed.
 - Do not use `sudo`.
 - Do not delete a `.bak-*` file. Those are the user's rollback.
 
-## 6. Verify, then report what was skipped
+## 6. Verify, then report
 
 ```bash
 bash multi-agent-coding/doctor.sh
-bash multi-agent-coding/tests/run-tests.sh
 ```
 
-The suite exits `0` when every test passed, `1` on any failure, and `3` when
-anything was skipped. A skip is not a pass. Report:
+Run it again after the install and compare it with the output from step 1: it now
+reports the installed files instead of the files an install would back up.
+
+If level 2 was installed, check the hook that is actually on disk — the package's
+test suite runs against its own temporary `HOME` and proves nothing about this
+machine:
+
+```bash
+printf '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' \
+  | bash "$HOME/.multi-agent-coding/hooks/block-dangerous.sh"
+```
+
+It must print `BLOCKED: …` on stderr and exit 2. Anything else — no output, exit 0,
+a missing file — means the safety floor is not in place; report it and stop.
+
+Report:
 
 - which levels were installed, and every path written;
 - every file that was backed up, with its `.bak-*` name;
-- the test result, including the exit code and each skipped test with its reason
-  (usually a missing optional binary);
+- the result of the hook check, with its exit code;
 - anything the installer printed that it decided not to touch.
 
-Tell the user to restart each CLI, and how to confirm the rules loaded: Claude Code
-`/memory`, Grok Build `grok inspect`. For Codex, the rules are a single file at
+Tell the user to restart each CLI, and how to confirm the rules loaded: in Claude
+Code `/context` lists the loaded memory files, and `~/.claude/rules/core.md` must be
+among them; Grok Build has `grok inspect`. For Codex, the rules are a single file at
 `~/.codex/AGENTS.md`; confirm it exists and that `project_doc_max_bytes` in
-`~/.codex/config.toml` is at least the file's size.
+`~/.codex/config.toml` is at least 131072.
 
 If the user wants it gone:
 

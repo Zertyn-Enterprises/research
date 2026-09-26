@@ -496,6 +496,83 @@ t_assert_eq "the shipped package uninstalls (exit 0)" "0" "$rc"
 t_assert_eq "uninstall left no shipped hook entry" "0" \
   "$(jq '[.hooks.PreToolUse // [] | .[].hooks[].command] | map(select(contains("block-dangerous"))) | length' "$S")"
 
+# ---------------------------------------------------------------- level 3 pulls in level 4
+
+new_home lvl3 .claude
+rc="$(run_log "$LOGS/lvl3.log" bash "$PKG/install.sh" --yes --level 3)"
+t_assert_eq "--level 3 exits 0" "0" "$rc"
+t_assert_grep "it says level plan was added" "level plan added to the selection" "$LOGS/lvl3.log"
+t_assert "the templates landed although only --level 3 was asked" test -f "$HOME/.multi-agent-coding/templates/PLAN.md"
+
+# ---------------------------------------------------------------- Codex cap: raise anything below the target
+
+new_home codex-32k .claude .codex
+printf 'project_doc_max_bytes = 32768\n' > "$HOME/.codex/config.toml"
+bash "$PKG/install.sh" --yes --only rules > "$LOGS/codex-32k.log" 2>&1
+t_assert_grep "a 32768 cap (larger than the rules file) is still raised — it is a combined budget" \
+  "^project_doc_max_bytes = 131072$" "$HOME/.codex/config.toml"
+
+# ---------------------------------------------------------------- destructive-input guards
+
+new_home prefix-home .claude
+rc="$(run_log "$LOGS/prefix-home.log" bash "$PKG/install.sh" --yes --only plan --prefix "$HOME/")"
+t_assert_eq "--prefix HOME/ (trailing slash, i.e. HOME itself) is refused (exit 1)" "1" "$rc"
+t_assert_grep "it says the prefix must be inside HOME, not HOME" "not HOME itself" "$LOGS/prefix-home.log"
+rc="$(run_log "$LOGS/prefix-home-u.log" bash "$PKG/uninstall.sh" --yes --prefix "$HOME/")"
+t_assert_eq "uninstall with --prefix HOME/ is refused too (exit 1)" "1" "$rc"
+t_assert "the config dir survived" test -d "$HOME/.claude"
+
+new_home manifest-edit .claude
+bash "$PKG/install.sh" --yes --only rules > "$LOGS/manifest-install.log" 2>&1
+VICTIM_OUT="$TMP_HOME/victim-outside.txt"
+printf '# managed-by: multi-agent-coding\nvictim\n' > "$VICTIM_OUT"
+printf 'file\t%s\n' "$VICTIM_OUT" >> "$HOME/.multi-agent-coding/manifest.txt"
+printf 'file\t%s/../victim-outside.txt\n' "$HOME" >> "$HOME/.multi-agent-coding/manifest.txt"
+rc="$(run_log "$LOGS/manifest-uninst.log" bash "$PKG/uninstall.sh" --yes)"
+t_assert_eq "uninstall with a hand-edited manifest exits 0" "0" "$rc"
+t_assert "a manifest line pointing outside HOME is not deleted" test -f "$VICTIM_OUT"
+t_assert_grep "it refuses the outside path out loud" "refusing: .*outside HOME" "$LOGS/manifest-uninst.log"
+t_assert_eq "the real rules file was still removed" "1" "$(rc_of test -e "$HOME/.claude/rules/core.md")"
+rm -f "$VICTIM_OUT"
+
+new_home claude-symlink .codex
+OUTSIDE="$TMP_HOME/outside-claude"; mkdir -p "$OUTSIDE"
+ln -s "$OUTSIDE" "$HOME/.claude"
+rc="$(run_log "$LOGS/claude-symlink.log" bash "$PKG/install.sh" --yes --only rules,safety)"
+t_assert_eq "a ~/.claude symlink that leaves HOME makes the install refuse (exit 1)" "1" "$rc"
+t_assert_grep "it names the symlink escape" "refusing to write outside HOME .*through a symlink" "$LOGS/claude-symlink.log"
+t_assert_eq "nothing was written into the outside directory" "0" "$(find "$OUTSIDE" -type f | wc -l | tr -d ' ')"
+rm -rf "$OUTSIDE"
+
+new_home settings-symlink .claude
+mkdir -p "$HOME/dotfiles"
+printf '{"model":"keep"}\n' > "$HOME/dotfiles/settings.json"
+ln -s "$HOME/dotfiles/settings.json" "$HOME/.claude/settings.json"
+rc="$(run_log "$LOGS/settings-symlink.log" bash "$PKG/install.sh" --yes --only safety)"
+t_assert_eq "install over a symlinked settings.json exits 0" "0" "$rc"
+t_assert "settings.json is still a symlink" test -L "$HOME/.claude/settings.json"
+t_assert_eq "the dotfiles target received the hook" "1" \
+  "$(jq '[.hooks.PreToolUse[].hooks[].command] | map(select(contains("block-dangerous"))) | length' "$HOME/dotfiles/settings.json")"
+t_assert_eq "the dotfiles target kept its own key" "keep" "$(jq -r .model "$HOME/dotfiles/settings.json")"
+
+new_home odd-shape .claude
+printf '{"hooks":"nope","permissions":{"deny":"nope"}}\n' > "$HOME/.claude/settings.json"
+rc="$(run_log "$LOGS/odd-shape.log" bash "$PKG/install.sh" --yes --only safety)"
+t_assert_eq "an unexpected settings.json shape is refused (exit 1)" "1" "$rc"
+t_assert_grep "it says what shape it expects" "unexpected shape" "$LOGS/odd-shape.log"
+t_assert_eq "it refused BEFORE copying the hook (no half install)" "1" "$(rc_of test -e "$HOME/.multi-agent-coding/hooks/block-dangerous.sh")"
+
+new_home dangling .claude
+PKG2="$TMP_HOME/multi-agent-coding-copy/multi-agent-coding"
+mkdir -p "$(dirname "$PKG2")" && cp -R "$PKG" "$PKG2"
+bash "$PKG2/install.sh" --yes --link --only rules > "$LOGS/dangling-install.log" 2>&1
+t_assert "the --link install made a symlink" test -L "$HOME/.claude/rules/core.md"
+rm -rf "$(dirname "$PKG2")"
+t_assert_fail "the checkout is gone, so the link dangles" test -e "$HOME/.claude/rules/core.md"
+rc="$(run_log "$LOGS/dangling-uninst.log" bash "$PKG/uninstall.sh" --yes)"
+t_assert_eq "uninstall from another checkout exits 0" "0" "$rc"
+t_assert_eq "the dangling link we installed is removed" "1" "$(rc_of test -L "$HOME/.claude/rules/core.md")"
+
 # ---------------------------------------------------------------- --uninstall takes no selection
 
 new_home uninst-guard .claude

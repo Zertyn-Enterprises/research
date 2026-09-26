@@ -9,7 +9,7 @@ vendor's own documentation (URL inline) or marked as not verified by us.
 | | Claude Code | Codex CLI | Grok Build |
 |---|---|---|---|
 | Global rules | `~/.claude/rules/*.md` | `~/.codex/AGENTS.md` (one file) | `~/.grok/rules/*.md` and `~/.claude/rules/*.md` |
-| Size cap | no documented cap | `project_doc_max_bytes`, default 32 KiB | no character cap for instruction files |
+| Size cap | no documented cap | `project_doc_max_bytes`, default 32 KiB, combined across all loaded files | no character cap for instruction files |
 | Agents | `~/.claude/agents/*.md` | not applicable | Claude's, via compatibility |
 | Skills | `~/.claude/skills/<name>/SKILL.md` | `~/.agents/skills` (not verified by us) | `~/.grok/skills` (not verified by us) |
 | Hooks | `hooks` key in `~/.claude/settings.json` | `~/.codex/hooks.json` | `~/.grok/hooks/*.json` |
@@ -26,7 +26,9 @@ one file, `~/.claude/rules/core.md`, and leaves any other file in that directory
 alone.
 
 **Config directory.** If `CLAUDE_CONFIG_DIR` is set in your environment, that is the
-config root instead of `~/.claude`. `doctor.sh` warns when it sees it and uses it.
+config root instead of `~/.claude`. `doctor.sh` warns when it sees it and uses it. It
+must point inside `$HOME`: the installer writes nothing outside it and exits 1 if the
+variable points elsewhere.
 
 **Agents and skills.** `~/.claude/agents/test-author.md` is a subagent definition.
 `~/.claude/skills/context-init/SKILL.md` and `~/.claude/skills/techdebt/SKILL.md` are
@@ -44,14 +46,13 @@ reinstall does not duplicate it.
 `Write(...)` rule is accepted by the settings parser but is never consulted
 ([permissions](https://code.claude.com/docs/en/permissions)). This is not a
 theoretical detail: a `Write(.env)` entry looks like it protects your secrets file
-and does nothing at all. `config/permissions.json` uses `Edit(...)` throughout.
+and does nothing at all. `config/permissions.json` uses `Edit(...)` and `Read(...)`
+for every path rule.
 Level 2 merges the `deny` and `ask` lists as set unions and does not touch
 `defaultMode` or any other key.
 
-**The `Notification` hook event** fires on `permission_prompt`, `idle_prompt`,
-`elicitation_dialog` and `auth_success` ([hooks](https://code.claude.com/docs/en/hooks)).
-Nothing in v0.1 uses it; it is the mechanism the roadmap's Linux and WSL2 desktop
-notifications would use instead of a macOS menu-bar widget.
+**The `Notification` hook event** is unused in v0.1; what it would be for is in
+[../extras/README.md](../extras/README.md).
 
 ## Codex CLI
 
@@ -64,12 +65,15 @@ than linking a directory. The `learn.chatgpt.com/docs/…` pages cited here are 
 hostnames are OpenAI's.
 
 **The 32 KiB cap matters.** `project_doc_max_bytes` defaults to 32 KiB (same page),
-and the rules file is large enough that the default would truncate it — silently,
-mid-sentence, taking whichever sections happen to fall past the limit with it. Level 1
-therefore patches `project_doc_max_bytes = 131072` into `~/.codex/config.toml`, but
-only if the key is absent or lower than the rules file's size. It is a single-key
-edit: the file is backed up first, rewritten through a temporary file, and created if
-it did not exist. No other key is touched.
+and it is not a per-file truncation: it is a combined budget for the global file plus
+every project `AGENTS.md` Codex loads on the way to your working directory. Codex
+stops adding files once the budget is spent, so whole files are skipped rather than
+cut mid-sentence. The rules file is around 29 KB, which under the default would leave
+roughly 3 KB for the repo's own `AGENTS.md` — the file that carries the conventions
+an agent cannot infer. Level 1 therefore patches `project_doc_max_bytes = 131072`
+into `~/.codex/config.toml` whenever the key is absent, or below 131072. It is a
+single-key edit: the file is backed up first, rewritten through a temporary file, and
+created if it did not exist. No other key is touched.
 
 **Hooks.** Codex hooks live in `~/.codex/hooks.json`, use the same JSON shape as
 Claude Code's, and a hook that exits 2 blocks the call

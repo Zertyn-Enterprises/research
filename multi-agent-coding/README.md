@@ -12,6 +12,9 @@ Version 0.1. Read [docs/limitations.md](docs/limitations.md) before you rely on 
 
 ## Quick start
 
+`git` and `jq` first: `sudo apt install -y git jq` on Ubuntu or WSL2,
+`brew install jq` on macOS.
+
 ```bash
 git clone https://github.com/Zertyn-Enterprises/research.git
 cd research
@@ -35,12 +38,12 @@ never touch secrets or permission modes. It works with any CLI that has a shell.
 | Flag | Effect |
 |---|---|
 | `--dry-run` | Print every path that would be written or changed. Write nothing. |
-| `--yes` | Skip the per-level prompts. Use it only after a dry run. |
+| `--yes` | Skip the per-level prompts. Required whenever stdin is not a terminal; without it the installer writes nothing and exits 1. |
 | `--link` | Symlink into the cloned checkout instead of copying. Updates follow `git pull`. |
-| `--level N` | Install levels 1 through N (see the table below). |
-| `--only LIST` | Install exactly these levels: a comma-separated list of names or numbers, e.g. `--only rules,safety` or `--only 2`. |
+| `--level N` | Install levels 1 through N (see the table below). `--level 3` installs 1-4, because level 3 pulls in level 4. |
+| `--only LIST` | Install exactly these levels: a comma-separated list of names or numbers, e.g. `--only rules,safety` or `--only 2`. Selecting `claude-quality` also adds `plan`. |
 | `--prefix DIR` | Install prefix (must be inside `$HOME`). Same as `MULTI_AGENT_CODING_HOME`. |
-| `--uninstall` | Delegate to `uninstall.sh`; remaining flags are passed through. |
+| `--uninstall` | Hands over to `uninstall.sh`; only `--dry-run`, `--yes`, `--prefix` and `--restore-backups` pass through, level flags are rejected. |
 | `--help` | Usage. |
 
 Exit codes: `0` success, `1` error, `2` usage error. `doctor.sh` and
@@ -55,26 +58,59 @@ installer writes nothing, says so, and exits 1. Pass `--yes` after a dry run.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MULTI_AGENT_CODING_HOME` | `$HOME/.multi-agent-coding` | Install prefix. Holds the copied hook, git hooks, templates and `manifest.txt`. |
-| `MAC_PROTECTED_BRANCHES` | `main master` | Branches the safety hook refuses to push to directly. |
-| `CLAUDE_CONFIG_DIR` | unset | Honoured when set: the installer uses it instead of `~/.claude` and warns. |
+| `MULTI_AGENT_CODING_HOME` | `$HOME/.multi-agent-coding` | Install prefix. Holds the copied hook, git hooks, the two tools, templates and `manifest.txt`. |
+| `MAC_PROTECTED_BRANCHES` | `main master` | Branches the safety hook refuses to push to directly. An empty value falls back to the default, so the guard cannot be switched off this way. Set it in the CLI's own environment — your shell profile, or the `env` block of `settings.json` — so the hook sees it. |
+| `CLAUDE_CONFIG_DIR` | unset | Honoured when set; must live inside `$HOME` or the installer exits 1. |
 | `MAC_SKIP_PATH_DETECT` | unset | `1` detects CLIs by config directory only, ignoring `PATH`. Used by the tests. |
+
+### After installing
+
+Restart each CLI — none of them reloads global instructions in a running session.
+In Claude Code, `/context` lists the loaded memory files; `~/.claude/rules/core.md`
+should be among them. For Codex, confirm that `~/.codex/AGENTS.md` exists. If you
+installed level 2, smoke-test the hook:
+
+```bash
+printf '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}' \
+  | bash "$HOME/.multi-agent-coding/hooks/block-dangerous.sh"
+```
+
+It must print `BLOCKED: …` and exit 2.
+
+### Updating
+
+```bash
+git pull
+bash multi-agent-coding/install.sh --yes
+```
+
+A second run rewrites only what the pull changed and prints `unchanged` for the
+rest; it never backs up a file it installed itself. With `--link` the installed files are symlinks into the checkout, so
+`git pull` alone updates them. Switching between the two is one more run — with
+`--link` to move to symlinks, without it to move back to copies — and neither
+creates a new `.bak-*`, because the file being replaced is already the kit's.
 
 ## Levels
 
-Levels are opt-in and can be selected in any combination. One dependency: the
-`agentsify` and `plan-init` commands from level 3 read the templates that level 4
-installs, so take both or neither.
+A level is a group of files installed together, prompted for separately,
+selectable with `--only`, and removable by the uninstaller. Levels are opt-in and
+combine freely, with one dependency: the `agentsify` and `plan-init` commands from
+level 3 read the templates that level 4 installs, so choosing `claude-quality`
+auto-adds level `plan` and the installer prints `level plan added to the
+selection`. `--level 3` therefore installs levels 1-4.
 
 | Level | Name | What it writes |
 |---|---|---|
-| 1 | `rules` | The shared rules file into each CLI's global instruction path: `~/.claude/rules/core.md` for Claude Code, `~/.codex/AGENTS.md` for Codex (plus `project_doc_max_bytes = 131072` in `~/.codex/config.toml`, because the default 32 KiB truncates the file). Grok Build already reads `~/.claude/rules/`, so nothing is written under `~/.grok` unless Claude Code is absent. |
+| 1 | `rules` | The shared rules file into each CLI's global instruction path: `~/.claude/rules/core.md` for Claude Code, `~/.codex/AGENTS.md` for Codex (plus `project_doc_max_bytes = 131072` in `~/.codex/config.toml`, because Codex's default 32 KiB is a combined budget for this file and every project `AGENTS.md` it loads). Grok Build already reads `~/.claude/rules/`, so nothing is written under `~/.grok` unless Claude Code is absent. |
 | 2 | `safety` | `block-dangerous.sh` into the install prefix, wired as a `PreToolUse` hook in every CLI that is present. A deny/ask permission fragment merged into `~/.claude/settings.json`. A `gitleaks` pre-commit hook, enabled with `git config --global core.hooksPath` only if you have no global hooks path already. |
 | 3 | `claude-quality` | Claude Code only: a statusline, the `test-author` agent, the `context-init` and `techdebt` skills, and `agentsify` + `plan-init` symlinked into `~/.local/bin`. |
 | 4 | `plan` | The `AGENTS.md` and `PLAN.md` templates into the install prefix, where `agentsify` and `plan-init` read them. |
 
 Level 1 is the whole point of the kit. Level 2 is the part that can block a command
-you wanted to run. Level 3 only touches Claude Code.
+you wanted to run. Level 3 only touches Claude Code, and its two commands land in
+`~/.local/bin`: the installer and `doctor.sh` both say so when that directory is not
+on your `PATH`, and neither edits a shell profile (on Ubuntu a new login shell adds
+it once the directory exists).
 
 ## Which CLIs
 
@@ -90,7 +126,9 @@ Kimi Code and the Z.ai (GLM) coding plans run inside Claude Code itself: you poi
 `ANTHROPIC_BASE_URL` and `ANTHROPIC_AUTH_TOKEN` at the provider and keep the same
 `~/.claude` directory ([Z.ai](https://docs.z.ai/devpack/tool/claude.md),
 [Kimi Code](https://moonshotai.github.io/kimi-code/en/)). So they inherit levels 1-3
-with no extra work, and the doctor says so.
+with no extra work, and the doctor says so. If you keep each provider in its own
+`CLAUDE_CONFIG_DIR`, run the installer once per config directory:
+`CLAUDE_CONFIG_DIR=… bash multi-agent-coding/install.sh`.
 
 Grok Build's Claude compatibility is real: verified on Grok 1.0.41 with
 `grok inspect`, which lists `~/.claude/rules/core.md` as a loaded global instruction
@@ -105,7 +143,7 @@ native hook file instead. Details and vendor URLs:
 |---|---|
 | macOS 13+ | Supported. Developed here. |
 | Ubuntu 20.04+, Debian 10+ | Supported. Level 1-4 run in CI on `ubuntu-latest`. |
-| Windows 10/11 via WSL2 | Supported. Install inside the Linux distribution, not on the Windows side. |
+| Windows 10/11 via WSL2 | Expected to work: the same Linux path runs in CI on `ubuntu-latest` and was exercised in a stock Ubuntu 22.04 container (suite, install, reinstall, uninstall), but WSL2 itself is not verified by us. Install inside the Linux distribution, not on the Windows side. |
 | Native Windows (PowerShell, cmd) | Not supported. |
 
 Native Windows is out because every managed file here is a bash script and because
@@ -120,37 +158,18 @@ Full matrix and the WSL2 setup steps: [docs/os-support.md](docs/os-support.md).
 
 ## Cross-model review is optional, and it is not free
 
-Having a second model family review your diff catches real bugs, and it costs real
-money and real time. Be honest about the arithmetic before you build it into your
-workflow:
-
-- **Each review is a full session of another model.** It reads the diff and the
-  surrounding code with its own context window and its own quota.
-- **You need at least two subscriptions** from different vendors. A model reviewing
-  its own family's output is not a second opinion.
-- **Panel mode multiplies the cost** by the number of families you ask. Three
-  reviewers means three full sessions and three times the wait.
-
-So decide per change, not once per project:
-
-| Change | Reviewers |
-|---|---|
-| Docs, comments, formatting, a one-line fix | none |
-| Normal application code | one, from another family |
-| 🔴 money, entitlements, auth, persisted data, shared contracts | panel |
-
-**This module is not in v0.1.** The rules file tells your agent to get an
-independent review when a second family is available, and to say plainly when none
-ran. Automating it (an `xreview` command plus a pre-PR gate) is on the
-[roadmap](ROADMAP.md). The reasoning, the cost model, and how the future module
-degrades to `SKIPPED` rather than a blocked PR when you only have one subscription:
-[docs/cross-model-review.md](docs/cross-model-review.md).
+A second model family reviewing your diff catches real bugs, and each review costs
+a full session of another model — its own context window, its own quota, multiplied
+by every reviewer in a panel — so it needs subscriptions with two different vendors.
+**Not in v0.1:** the rules file asks for an independent review when a second family
+is available and for plain words when none ran; the `xreview` command and its pre-PR
+gate are on the [roadmap](ROADMAP.md). Cost model, and how the future module degrades
+to `SKIPPED` instead of blocking a PR: [docs/cross-model-review.md](docs/cross-model-review.md).
 
 ## Widgets and extras
 
-A menu-bar session index and a token-cost menu bar exist, are macOS-only, and are
-**not** in v0.1. What they need, and how a Linux or WSL2 user gets the same signal
-from a `Notification` hook instead, is in [extras/README.md](extras/README.md).
+Two macOS-only menu-bar widgets exist and are **not** in v0.1; what they need and
+the Linux/WSL2 equivalent are in [extras/README.md](extras/README.md).
 
 ## Security: read before you install
 
@@ -194,6 +213,10 @@ only the hook entries whose command points into the install prefix, and only the
 permission entries it added. It unsets `statusLine` only if the value is the one it
 installed. Anything it decided not to touch is printed, so you can finish by hand.
 
+Three things survive on purpose: `project_doc_max_bytes` in `~/.codex/config.toml`
+(a raised cap harms nothing), every `.bak-*` file, and an otherwise empty
+`~/.claude/settings.json` that the installer created.
+
 ## Layout
 
 ```
@@ -216,14 +239,16 @@ multi-agent-coding/
   tests/                                   # run-tests.sh + test-*.sh, green on macOS and Ubuntu
 ```
 
-Every managed file starts with a `managed-by: multi-agent-coding` marker line. That
-marker is how the installer tells its own files from yours, and it is why
-reinstalling is idempotent instead of backing up its own previous copy.
+Every managed file carries a `managed-by: multi-agent-coding` marker within its
+first 20 lines — below the YAML frontmatter in the agent and skill files; the JSON
+fragments carry none. That marker is how the installer tells its own files from
+yours, and it is why reinstalling is idempotent instead of backing up its own
+previous copy.
 
 ## Requirements
 
 `git`, `bash` 3.2 or newer (the macOS default qualifies), and `jq` for levels 2 and 3.
-Optional: `gitleaks` for the pre-commit hook, `python3`. `doctor.sh` reports
+Optional: `gitleaks` for the pre-commit hook. `doctor.sh` reports
 what is missing.
 
 ## License

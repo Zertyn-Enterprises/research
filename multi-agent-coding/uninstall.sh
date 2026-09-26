@@ -42,6 +42,10 @@ Options:
                       (default: \$MULTI_AGENT_CODING_HOME, else \$HOME/.multi-agent-coding)
   --help, -h          this text
 
+Environment:
+  MULTI_AGENT_CODING_HOME   install prefix (default \$HOME/.multi-agent-coding)
+  CLAUDE_CONFIG_DIR         honoured when set (must live inside \$HOME): used instead of \$HOME/.claude
+
 Exit codes: 0 ok · 1 error · 2 usage.
 USAGE
 }
@@ -108,6 +112,13 @@ is_ours_path() { # anything inside the prefix is ours by construction
   case "$1" in
     "$KIT_PREFIX"/*) return 0 ;;
   esac
+  # A dangling link whose target was our prefix or a checkout of this kit is ours too:
+  # `--link` installs die that way when the checkout is deleted.
+  if [ -L "$1" ] && [ ! -e "$1" ]; then
+    case "$(readlink "$1")" in
+      "$KIT_PREFIX"/*|*/"$KIT_NAME"/*) return 0 ;;
+    esac
+  fi
   kit_is_ours "$1"
 }
 
@@ -117,11 +128,18 @@ prune_parent() { # remove a directory we created, only when it is now empty
   case "$d" in
     "$HOME"|"$KIT_CLAUDE_DIR"|"$KIT_CODEX_DIR"|"$KIT_GROK_DIR"|"$HOME/.local/bin") return 0 ;;
   esac
+  kit_path_in_home "$d" || return 0
   rmdir "$d" 2>/dev/null || true
 }
 
 remove_path() { # remove_path <path>
   local p="$1"
+  # The manifest is a plain text file: a hand-edited line must never reach outside HOME.
+  if ! kit_path_in_home "$p"; then
+    kit_warn "refusing: $p is outside HOME (as written or through a symlink) — left alone"
+    LEFT=$((LEFT + 1))
+    return 0
+  fi
   if [ ! -e "$p" ] && [ ! -L "$p" ]; then
     kit_info "already gone: $p"
     return 0

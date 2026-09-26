@@ -51,9 +51,13 @@ This is the most important limitation on the page.
   permission fragment covers some of that; neither is a boundary.
 - **It matches patterns.** It blocks the specific shapes it knows: recursive
   deletes of `/` or `~`, disk-level writes, `chmod -R 777`, piping a remote script
-  to a shell, pushes to a protected branch, reads of SSH keys and credential
-  files, `DROP TABLE` and mass deletes. A command that means the same thing in a
-  spelling it does not recognise gets through.
+  to a shell or another interpreter, pushes to a protected branch, reads of SSH keys
+  and credential files, `DROP TABLE` and mass deletes, writes to a real `.env` file
+  (redirection, `tee`, `cp`, `mv` — `.env.example` stays writable, and
+  `cp .env.example .env.local` is allowed), `tccutil`, `diskutil erase|partition`,
+  the disk tools `wipefs`, `sgdisk`, `shred` and `mkswap`, and
+  `systemctl poweroff|reboot`. A command that means the same thing in a spelling it
+  does not recognise gets through.
 - **Deploys, publishes and repo-settings changes are not in the hook.** Those live
   in the permission fragment as `ask` rules (`vercel deploy`, `npm publish`,
   `git config --global`, …). Claude Code enforces them, and Grok Build reads the
@@ -63,7 +67,28 @@ This is the most important limitation on the page.
   permission rule is a prefix match: `Bash(rm -rf /*)` also matches
   `rm -rf /tmp/build`, and `Bash(rm -rf ~*)` matches `rm -rf ~/proj/dist`. Denying
   them would make ordinary cleanup impossible, so they prompt, and the hook is the
-  layer that hard-blocks the exact `/` and home forms.
+  layer that hard-blocks the exact `/` and home forms. The one exception is
+  `Bash(sudo rm -rf /*)`, which is denied even though it is a prefix match too: `sudo`
+  in front of a recursive absolute delete is not everyday work.
+- **The hook decides before the `ask` rule can prompt.** A `PreToolUse` hook runs
+  ahead of the permission system, so with level 2 installed `git push origin main`
+  exits 2 at the hook and the `ask` entry for it never gets to ask. Inside the agent
+  that push is refused, not offered: run it from your own terminal, or set
+  `MAC_PROTECTED_BRANCHES` to the branches you actually want protected.
+- **`cp .env.example .env` is allowed on purpose.** Seeding a local `.env` from the
+  committed example is the standard bootstrap, so a `cp`/`mv` whose SOURCE is
+  `.env.example`, `.env.sample` or `.env.template` is never blocked, whatever its
+  target. Copying a real secrets file to one of those names first defeats the rule;
+  writes to `.env` from anything else (`cp creds.txt .env`, `> .env`, `tee .env`)
+  are still blocked, in any directory.
+- **It fails CLOSED on size, and only on size.** Over 200 `| ; &`-separated segments
+  or over 16000 characters, the command is refused unread. Every rule is a regex
+  sweep plus a per-segment loop, so padding a payload until the hook outruns the
+  CLI's 10 s timeout would otherwise turn that timeout into an allow.
+- **The recursion into piped text stops at depth 3.** `echo '…' | sh` re-runs this
+  hook on the piped payload, passing the depth in `MAC_HOOK_DEPTH`; past three
+  nested levels it gives up and allows, with a note on stderr. Only the child's
+  exit 2 is a verdict — a child that crashes never turns into a block.
 - **It fails open on input it cannot read.** A payload with no command (an empty
   or malformed stdin, or a CLI whose payload shape we do not parse) is allowed.
   Blocking blind would break every CLI we have not tested.
@@ -90,9 +115,13 @@ This is the most important limitation on the page.
   shell profile. This kit never touches `~/.zshrc`, `~/.bashrc`, or any other
   profile.
 - **`~/.codex/config.toml` gets a single-key edit.** Level 1 raises
-  `project_doc_max_bytes` because the 32 KiB default truncates the rules file. The
-  file is backed up first. If your config.toml has unusual structure, check the
-  result.
+  `project_doc_max_bytes` to 131072 whenever the key is absent or below that value.
+  The 32 KiB default is not a per-file truncation: it is a combined budget for the
+  global file plus every project `AGENTS.md` Codex loads, and Codex stops adding
+  files once the budget is spent — whole files are skipped, not cut mid-sentence. A
+  29 KB global rules file under the default would leave about 3 KB for the repo's
+  own `AGENTS.md`. The file is backed up first. If your config.toml has unusual
+  structure, check the result.
 - **The uninstaller is only as good as the manifest.** It removes what
   `$MULTI_AGENT_CODING_HOME/manifest.txt` records. If you move or hand-edit
   installed files, it will tell you what it left alone rather than guess. Files you

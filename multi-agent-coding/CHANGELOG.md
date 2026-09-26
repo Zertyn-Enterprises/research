@@ -14,7 +14,9 @@ First release under the name `multi-agent-coding`. It replaces the Claude-Code-o
   is the contract the hook and the templates depend on.
 - **Multi-CLI install (level 1).** Claude Code (`~/.claude/rules/core.md`), Codex
   (`~/.codex/AGENTS.md`, plus `project_doc_max_bytes = 131072` in
-  `~/.codex/config.toml` so the 32 KiB default does not truncate the file), and Grok
+  `~/.codex/config.toml`: the 32 KiB default is a combined budget for the global file
+  and every project `AGENTS.md` Codex loads, so a 29 KB global file would leave almost
+  nothing for the repo's own), and Grok
   Build (which reads the Claude rules directory through its compatibility layer, so
   nothing is written under `~/.grok` unless Claude Code is absent).
 - **Safety floor (level 2).** `hooks/block-dangerous.sh`, one script wired as a
@@ -36,13 +38,16 @@ First release under the name `multi-agent-coding`. It replaces the Claude-Code-o
 - **Templates (level 4).** `templates/AGENTS.md` and `templates/PLAN.md`, read by
   `agentsify` and `plan-init`.
 - **`doctor.sh`** — read-only diagnosis: OS (macOS, Linux, or WSL2 detected through
-  `/proc/version`), bash version, `git` / `jq` / `gitleaks` / `python3`, which CLIs
+  `/proc/version`), bash version, `git` / `jq` / `gitleaks`, which CLIs
   are present, a note that Kimi Code and GLM share `~/.claude`, a warning when
   `CLAUDE_CONFIG_DIR` is set, and every file an install would back up.
 - **`install.sh`** with `--dry-run`, `--yes`, `--link`, `--level N`,
-  `--only rules|safety|claude-quality|plan`, `--uninstall` and `--help`. Interactive
-  runs ask once per level. Exit codes: 0 success, 1 error, 2 usage.
-- **`uninstall.sh`** with `--restore-backups`. It reads
+  `--only rules|safety|claude-quality|plan`, `--prefix DIR`, `--uninstall` and
+  `--help`. Interactive runs ask once per level; selecting `claude-quality` adds
+  `plan`, whose templates its two commands read. Exit codes: 0 success, 1 error,
+  2 usage.
+- **`uninstall.sh`** with `--dry-run`, `--yes`, `--prefix DIR` and
+  `--restore-backups`. It reads
   `$MULTI_AGENT_CODING_HOME/manifest.txt` and removes only its own files, links, hook
   entries and permission entries, then prints what it left alone.
 - **Backups and a manifest for every write.** A pre-existing file that is not ours is
@@ -57,8 +62,9 @@ First release under the name `multi-agent-coding`. It replaces the Claude-Code-o
 
 ### Changed
 
-- **Layout.** The old `claude/` directory is now `multi-agent-coding/`. Update any
-  link or bookmark that pointed at `claude/`.
+- **Layout.** The old `claude/` directory is now `multi-agent-coding/`, and its
+  `claude/install.sh` and `claude/README.md` are gone — this package's installer and
+  docs replace them. Update any link or bookmark that pointed at `claude/`.
 - **Four rules files became one.** `agent-behavior.md`, `coding-discipline.md`,
   `code-quality.md` and `git-and-safety.md` are merged into `rules/core.md`, with the
   section names preserved so citations still resolve. If you installed the old
@@ -66,13 +72,13 @@ First release under the name `multi-agent-coding`. It replaces the Claude-Code-o
 - **`settings.example.json` is gone.** Settings are no longer a file you copy and
   merge by hand; `config/permissions.json` and `config/hooks.json` are fragments the
   installer merges with `jq`, keyed so that reinstalling does not duplicate entries.
-- **`permissions.defaultMode` is never set.** The old template shipped
-  `defaultMode: auto`. Nothing in this version writes that key, and the installer
-  does not touch it if you set it yourself.
-- **Rules no longer reference a private harness.** The old rules mentioned dispatched
-  agents, a `headless-dispatch.md` and a `/ship` flow that did not exist for anyone
-  else. Those clauses are removed; the discipline they described is kept in
-  CLI-agnostic wording.
+  Three things the old template carried are not shipped by this version: its `env`
+  block (`CLAUDE_CODE_DISABLE_AUTO_MEMORY`, `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS`,
+  `BASH_MAX_OUTPUT_LENGTH`), its `effortLevel`, and `permissions.defaultMode`. If you
+  copied that file, they are still in your `~/.claude/settings.json`; this installer
+  neither writes nor removes them.
+- **Rules are CLI-agnostic.** The old rules named one harness's tooling. The
+  discipline is unchanged; the wording now maps onto whichever CLI you run.
 
 ### Fixed
 

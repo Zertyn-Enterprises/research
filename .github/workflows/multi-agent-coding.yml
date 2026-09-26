@@ -13,6 +13,7 @@ on:
     paths:
       - 'multi-agent-coding/**'
       - '.github/workflows/multi-agent-coding.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,6 +26,7 @@ jobs:
   test:
     name: tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -75,13 +77,20 @@ jobs:
       - name: Syntax check every script
         run: |
           set -euo pipefail
-          find multi-agent-coding -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          # The stock shell of each OS, by absolute path: /bin/bash is 3.2 on macOS
+          # and 5.x on ubuntu; a PATH `bash` could be a newer Homebrew build.
+          SH=/bin/bash
+          "$SH" --version | head -1
+          find multi-agent-coding -type f -name '*.sh' -print0 | xargs -0 -n1 "$SH" -n
           for d in multi-agent-coding/tools multi-agent-coding/githooks; do
             if [ ! -d "$d" ]; then
               echo "ERROR: missing package directory: $d" >&2
               exit 1
             fi
-            find "$d" -type f -print0 | xargs -0 -n1 bash -n
+            # only files that declare a bash shebang; data or docs may land here later
+            find "$d" -type f -print0 | while IFS= read -r -d '' f; do
+              if head -1 "$f" | grep -qE '^#!.*bash'; then "$SH" -n "$f"; fi
+            done
           done
           echo "syntax ok"
 
