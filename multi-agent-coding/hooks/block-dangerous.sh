@@ -72,7 +72,7 @@ rm_root_delete() { # <text> → 0 when an rm with recursive+force flags targets 
 
 seg_head_strip() { # <segment> → the segment with `(` `{` `$(` backtick openers, wrappers, `sh -c` and VAR=value prefixes removed
   local s t rest
-  s=$(printf '%s' "$1" | sed -E 's/^[[:space:]({$`]+//')
+  s=$(printf '%s' "$1" | sed -E 's/^[[:space:]({$`]+//; s/[[:space:])}`]+$//')
   while :; do
     t="${s%%[[:space:]]*}"
     [ "$t" = "$s" ] && break
@@ -149,7 +149,22 @@ fi
 # ── Protected-branch push: judged per segment, with `git` at the argv head, on text
 #    with heredocs removed and the quote CHARACTERS removed (not blanked). So a
 #    quoted "main" is still main, while `echo "git push origin main"` is an echo.
-UNQUOTED=$(printf '%s' "$STRIPPED" | sed -e "s/'//g" -e 's/"//g')
+# Quote characters removed, but a separator INSIDE quotes (`-m "a; reboot later"`) is
+# neutralized first, so the later split on | ; & never turns quoted text into a segment.
+UNQUOTED=$(printf '%s\n' "$STRIPPED" | awk -v sq="'" '
+  { line = $0; out = ""; n = length(line)
+    for (i = 1; i <= n; i++) {
+      c = substr(line, i, 1)
+      if (q == "") {
+        if (c == "\"" || c == sq) { q = c; continue }
+        out = out c
+      } else {
+        if (c == q) { q = ""; continue }
+        if (c == "|" || c == ";" || c == "&") c = "_"
+        out = out c
+      }
+    }
+    print out }')
 if [ -n "$PROT_RE" ]; then
   while IFS= read -r pseg; do
     pseg=$(seg_head_strip "$pseg")
@@ -241,16 +256,18 @@ $(printf '%s\n' "$ANALYZED" | tr '|;&' '\n\n\n')
 EOF
 
 if printf '%s' "$ANALYZED" | grep -qE '(^|[|;&[:space:]])(cat|head|tail|less|more|bat|base64|strings|xxd|cp|scp)[[:space:]][^|;&]*(\.ssh/|/etc/shadow)'; then
-  block "reading SSH keys or system credential files (Git & Safety §1)"
+  block "reading or copying SSH keys / system credential files (Git & Safety §1)"
 fi
 # quoted-path variant: the path hides inside QSTR, so also check the raw command
 if printf '%s' "$COMMAND" | grep -qE '(^|[|;&[:space:]])(cat|head|tail|less|more|bat|base64|strings|xxd|cp|scp)[[:space:]][^|;&]*\.ssh/'; then
-  block "reading SSH keys (quoted path) (Git & Safety §1)"
+  block "reading or copying SSH keys (quoted path) (Git & Safety §1)"
 fi
 
 # ── Per-segment argv-head checks ──
 # tr, not sed: a newline in a sed replacement is not portable across BSD/GNU.
-SEGS=$(printf '%s\n' "$ANALYZED" | tr '|;&' '\n\n\n')
+# Quote CHARACTERS removed, not blanked: the head is judged after wrapper stripping,
+# so `bash -c "shutdown -h now"` reaches `shutdown` while `echo "shutdown"` stays echo.
+SEGS=$(printf '%s\n' "$UNQUOTED" | tr '|;&' '\n\n\n')
 while IFS= read -r seg; do
   # wrappers and env-assignment prefixes stripped to reach the real head — judged
   # on the FIRST TOKEN only, so 'dd if=…' is never read as VAR=value

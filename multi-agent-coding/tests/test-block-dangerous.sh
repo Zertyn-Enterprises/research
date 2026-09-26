@@ -118,6 +118,11 @@ $(psql -c 'DROP TABLE users')
 echo 'git push origin main' | sh
 printf 'rm -rf /\n' | bash
 echo "shutdown -h now" | sudo sh
+bash -c "shutdown -h now"
+sh -c "mkfs.ext4 /dev/sda1"
+bash -c "chmod -R 777 /"
+sh -c 'dd if=/dev/zero of=/dev/disk2'
+$(reboot)
 CASES
 
 echo "-- must ALLOW (rc=0) --"
@@ -177,6 +182,13 @@ git commit -m "fix: handle > .env redirects in the docs"
 echo 'ls -la' | sh
 printf 'npm test\n' | bash
 echo "hello" | cat
+echo "shutdown -h now"
+printf '%s\n' "mkfs.ext4 is dangerous"
+git commit -m "chmod -R 777 removed from the deploy script"
+sh -c "echo shutdown"
+git commit -m "release notes; git push origin main comes later"
+echo "step one | sh handles it"
+git commit -m "psql -c 'DROP TABLE' is gone; see docs"
 claude --model opus --tools "" -p "review"
 CASES
 
