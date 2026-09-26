@@ -205,7 +205,23 @@ kit_manifest_add() { # kit_manifest_add <kind> <path> — idempotent, never dupl
 
 # ---------------------------------------------------------------- file writes
 
+kit_dangling_ancestor() { # kit_dangling_ancestor <path> → prints the first ancestor (or the path) that is a symlink to nothing
+  local p="$1"
+  while [ "$p" != "/" ] && [ "$p" != "$HOME" ] && [ -n "$p" ]; do
+    if [ -L "$p" ] && [ ! -e "$p" ]; then printf '%s\n' "$p"; return 0; fi
+    p="$(dirname "$p")"
+  done
+  return 1
+}
+
 kit_mkdirp() {
+  local d
+  # `mkdir -p` cannot create a directory where a symlink to a missing target sits
+  # (a ~/.claude/rules -> ~/somewhere/rules copied from another machine, say);
+  # it would die with "File exists" halfway through a level. Refuse first, clearly.
+  if d="$(kit_dangling_ancestor "$1")"; then
+    kit_die "$d is a symlink to a missing target ($(readlink "$d")) — remove the link or restore its target, then re-run. Nothing was written."
+  fi
   if [ "$KIT_DRY_RUN" = "1" ]; then return 0; fi
   mkdir -p "$1"
 }
@@ -524,7 +540,22 @@ kit_doctor_backup_candidates() { # destinations that exist and are not ours
   done
 }
 
-kit_doctor_report() { # read-only; returns 1 when a hard dependency is missing
+kit_doctor_dangling() { # destination directories that are symlinks to nothing (dotfiles copied from another machine)
+  local d
+  for d in \
+    "$KIT_CLAUDE_DIR" "$KIT_CLAUDE_DIR/rules" "$KIT_CLAUDE_DIR/agents" "$KIT_CLAUDE_DIR/skills" \
+    "$KIT_CLAUDE_DIR/skills/context-init" "$KIT_CLAUDE_DIR/skills/techdebt" \
+    "$KIT_CODEX_DIR" "$KIT_GROK_DIR" "$KIT_GROK_DIR/rules" "$KIT_GROK_DIR/hooks" \
+    "$HOME/.local" "$HOME/.local/bin" \
+    "$KIT_PREFIX" "$KIT_PREFIX/hooks" "$KIT_PREFIX/tools" "$KIT_PREFIX/templates" "$KIT_PREFIX/githooks"
+  do
+    if [ -L "$d" ] && [ ! -e "$d" ]; then
+      printf '%s -> %s\n' "$d" "$(readlink "$d")"
+    fi
+  done
+}
+
+kit_doctor_report() { # read-only; returns 1 when a hard dependency is missing or a destination is unusable
   local rc=0 n p rules_bytes
   kit_say "$KIT_NAME doctor v$KIT_VERSION — read-only, writes nothing"
   kit_say ""
@@ -593,8 +624,24 @@ kit_doctor_report() { # read-only; returns 1 when a hard dependency is missing
 $(kit_doctor_backup_candidates)
 EOF
   if [ "$n" -eq 0 ]; then kit_info "nothing — no file of yours would be replaced"; fi
+  n=0
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    if [ "$n" -eq 0 ]; then
+      kit_say ""
+      kit_say "blocking: symlinks to a missing target where the installer needs a directory"
+    fi
+    kit_info "$p"
+    n=$((n + 1))
+  done <<EOF
+$(kit_doctor_dangling)
+EOF
+  if [ "$n" -gt 0 ]; then
+    kit_info "remove the link (rm <link>) or restore its target before installing"
+    rc=1
+  fi
   kit_say ""
-  if [ "$rc" -ne 0 ]; then kit_say "result: a hard dependency is missing (see MISSING above)"
+  if [ "$rc" -ne 0 ]; then kit_say "result: fix the MISSING or blocking items above before installing"
   else kit_say "result: ready"; fi
   return $rc
 }

@@ -1,7 +1,18 @@
 <!-- managed-by: multi-agent-coding -->
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.1 — unreleased
+
+### Fixed
+
+- `doctor.sh` lists destination directories that are symlinks to a missing target
+  (a `~/.claude/rules -> …` copied from another machine, for example) under
+  "blocking" and exits 1, so `install.sh` stops before writing anything instead of
+  dying halfway on `mkdir`. `docs/os-support.md` gains the first-machine steps for a
+  fresh WSL2 distribution: git identity, SSH key or `gh auth login`, CLIs installed
+  inside the distribution.
+
+## 0.1.0 — 2026-09-26
 
 First release under the name `multi-agent-coding`. It replaces the Claude-Code-only
 `claude/` directory that used to live at the repository root.

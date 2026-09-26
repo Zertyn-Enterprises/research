@@ -82,7 +82,20 @@ Then restart, create your Linux user, and from inside the distribution:
 ```bash
 sudo apt update && sudo apt install -y git jq
 sudo apt install -y bubblewrap socat   # only if you want Claude Code's Linux sandbox
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
 ```
+
+A fresh distribution has no git identity, no SSH key and no GitHub login: create a
+key (`ssh-keygen -t ed25519`) and add it to GitHub, or run `gh auth login` if you
+install the GitHub CLI. Then install the agent CLIs you use, inside the
+distribution, and sign in to each one.
+
+If you copied dotfiles or a `~/.claude` directory from another machine, look for
+symlinks whose target does not exist here (for example `~/.claude/rules ->
+~/somewhere/rules`). `doctor.sh` lists them under "blocking" and the installer
+refuses to run until the link is removed or its target restored — `mkdir` cannot
+create a directory on top of a dangling link.
 
 Three things matter after that:
 
