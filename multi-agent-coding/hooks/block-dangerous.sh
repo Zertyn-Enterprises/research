@@ -160,7 +160,7 @@ UNQUOTED=$(printf '%s\n' "$STRIPPED" | awk -v sq="'" '
         out = out c
       } else {
         if (c == q) { q = ""; continue }
-        if (c == "|" || c == ";" || c == "&") c = "_"
+        if (c == "|" || c == ";" || c == "&" || c == ">") c = "_"
         out = out c
       }
     }
@@ -231,9 +231,10 @@ env_target_hit() { # <text> <ere-with-ENV_FILE> → 0 when a matched target is a
   hit=$(printf '%s' "$1" | grep -oE "$2") || return 1
   printf '%s\n' "$hit" | grep -vE '\.env\.(example|sample|template)'"$ENV_END" | grep -q .
 }
-# Judged on the quote-blanked text: an unquoted `> .env` is a redirection, while a
-# commit message that says "> .env" is a string.
-if env_target_hit "$ANALYZED" ">>?[[:space:]]*${ENV_FILE}${ENV_END}"; then
+# Judged on the quote-stripped text (a `>` inside quotes was neutralized above): an
+# unquoted `>` followed by `.env` or `".env"` is a redirection, while a commit
+# message that says "> .env" is a string.
+if env_target_hit "$UNQUOTED" ">>?[[:space:]]*${ENV_FILE}${ENV_END}"; then
   block "direct write to a .env file — use the platform's env vars (Git & Safety §1)"
 fi
 while IFS= read -r eseg; do
@@ -252,7 +253,7 @@ while IFS= read -r eseg; do
       fi ;;
   esac
 done <<EOF
-$(printf '%s\n' "$ANALYZED" | tr '|;&' '\n\n\n')
+$(printf '%s\n' "$UNQUOTED" | tr '|;&' '\n\n\n')
 EOF
 
 if printf '%s' "$ANALYZED" | grep -qE '(^|[|;&[:space:]])(cat|head|tail|less|more|bat|base64|strings|xxd|cp|scp)[[:space:]][^|;&]*(\.ssh/|/etc/shadow)'; then

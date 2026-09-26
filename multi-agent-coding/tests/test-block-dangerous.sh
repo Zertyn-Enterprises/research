@@ -109,6 +109,10 @@ echo k=v > .env; ls
 echo k=v >.env|cat
 cp .env.example .env
 echo k=v > .env && cat .env.example
+echo k=v > ".env"
+echo k=v >> '.env.local'
+printf 'K=v\n' | tee ".env"
+cp creds.txt "./.env"
 $(git push origin main)
 `git push origin main`
 sh -c "git push origin main"
@@ -189,6 +193,9 @@ sh -c "echo shutdown"
 git commit -m "release notes; git push origin main comes later"
 echo "step one | sh handles it"
 git commit -m "psql -c 'DROP TABLE' is gone; see docs"
+git commit -m "docs: the '> .env' example was wrong"
+echo "redirect with > .env is documented" >> README.md
+tee ".env.example" < template.txt
 claude --model opus --tools "" -p "review"
 CASES
 
