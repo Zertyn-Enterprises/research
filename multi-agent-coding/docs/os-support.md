@@ -111,7 +111,10 @@ Three things matter after that:
    `%USERPROFILE%\.claude`, not the Linux `~/.claude` the installer writes. `$HOME`
    must be the Linux home, and if `doctor.sh` prints a `/mnt/c` path anywhere, you
    are in the wrong place.
-3. **Add a Windows Terminal profile** for the distribution and make the Ubuntu
+3. **Set the Ubuntu profile's starting directory to your Linux home** (Windows
+   Terminal → Settings → the Ubuntu profile → Starting directory), otherwise every
+   new tab opens on the Windows drive under `/mnt/c/…` — the wrong filesystem for
+   everything above. Then make the Ubuntu
    profile the default, so you are not accidentally in PowerShell when you start an
    agent.
 
