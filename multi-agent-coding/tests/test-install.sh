@@ -573,6 +573,16 @@ rc="$(run_log "$LOGS/dangling-uninst.log" bash "$PKG/uninstall.sh" --yes)"
 t_assert_eq "uninstall from another checkout exits 0" "0" "$rc"
 t_assert_eq "the dangling link we installed is removed" "1" "$(rc_of test -L "$HOME/.claude/rules/core.md")"
 
+# ---------------------------------------------------------------- a dangling symlink where a directory is needed
+
+new_home dangling-dir .claude .codex
+ln -s "$HOME/nowhere/rules" "$HOME/.claude/rules"
+rc="$(run_log "$LOGS/dangling-dir.log" bash "$PKG/install.sh" --yes --only rules)"
+t_assert_eq "install refuses when ~/.claude/rules is a dangling link (exit 1)" "1" "$rc"
+t_assert_grep "the doctor stopped it before any write" "blocking: symlinks to a missing target" "$LOGS/dangling-dir.log"
+t_assert_eq "Codex got nothing either (the doctor aborts the whole run)" "1" "$(rc_of test -e "$HOME/.codex/AGENTS.md")"
+t_assert "the dangling link itself is untouched" test -L "$HOME/.claude/rules"
+
 # ---------------------------------------------------------------- --uninstall takes no selection
 
 new_home uninst-guard .claude

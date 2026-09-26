@@ -158,7 +158,18 @@ new_home broken .claude
 rc="$(run_log "$LOGS/broken.log" bash "$BROKEN/doctor.sh")"
 t_assert_eq "doctor exits 1 when the rules file is missing" "1" "$rc"
 t_assert_grep "it names the missing rules file" "rules/core.md: MISSING" "$LOGS/broken.log"
-t_assert_grep "its result line says a dependency is missing" "^result: a hard dependency is missing" "$LOGS/broken.log"
+
+# ---------------------------------------------------------------- a dangling symlink where a directory is needed
+
+new_home dangling .claude .codex
+ln -s "$HOME/nowhere/rules" "$HOME/.claude/rules"
+rc="$(run_log "$LOGS/dangling.log" bash "$PKG/doctor.sh")"
+t_assert_eq "doctor exits 1 on a dangling ~/.claude/rules link" "1" "$rc"
+t_assert_grep "it lists the link under blocking" "^blocking: symlinks to a missing target" "$LOGS/dangling.log"
+t_assert_grep "it names the link and its target" "$HOME/.claude/rules -> $HOME/nowhere/rules" "$LOGS/dangling.log"
+t_assert_grep "it says how to fix it" "remove the link" "$LOGS/dangling.log"
+t_assert_grep "the result line is not 'ready'" "^result: fix the MISSING or blocking items" "$LOGS/dangling.log"
+t_assert_grep "its result line says something must be fixed first" "^result: fix the MISSING or blocking items" "$LOGS/broken.log"
 
 NOLIB="$TMP_HOME/pkg-nolib"
 mkdir -p "$NOLIB"
