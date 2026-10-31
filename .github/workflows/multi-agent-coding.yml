@@ -4,26 +4,81 @@ name: multi-agent-coding
 # each: macOS ships bash 3.2, ubuntu ships bash 5. Every script is syntax-checked with
 # that bash, then the suite runs. A skipped test is not a pass: run-tests.sh exits 3.
 
+# Every PR runs this workflow, because the org ruleset requires its `checks` job on main: a
+# path filter here would leave `checks` Pending. The `scope` job keeps the matrix (macOS
+# minutes) to PRs that touch the kit or this file; `checks` passes when the matrix passed
+# or was skipped by scope, and fails otherwise.
 on:
   push:
     paths:
       - 'multi-agent-coding/**'
       - '.github/workflows/multi-agent-coding.yml'
   pull_request:
-    paths:
-      - 'multi-agent-coding/**'
-      - '.github/workflows/multi-agent-coding.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
     shell: bash
 
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      kit: ${{ steps.scope.outputs.kit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Scope
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          kit=true
+          if [ "$EVENT" = "pull_request" ]; then
+            changed=$(git diff --name-only --no-renames "origin/$BASE_REF...HEAD")
+            if ! grep -qE '^(multi-agent-coding/|\.github/workflows/multi-agent-coding\.yml$)' <<< "$changed"; then
+              kit=false
+              echo "Nothing under multi-agent-coding/ changed: skipping the test matrix"
+            fi
+          fi
+          echo "kit=$kit" >> "$GITHUB_OUTPUT"
+
+      - name: Secret scan
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tgz" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
+          tar xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" detect --source . --no-git --no-banner
+
+  checks:
+    needs: [scope, test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Scope and matrix results
+        env:
+          SCOPE: ${{ needs.scope.result }}
+          TEST: ${{ needs.test.result }}
+        run: |
+          echo "scope=$SCOPE test=$TEST"
+          [ "$SCOPE" = success ] && { [ "$TEST" = success ] || [ "$TEST" = skipped ]; }
+
   test:
+    needs: scope
+    if: needs.scope.outputs.kit == 'true'
     name: tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
